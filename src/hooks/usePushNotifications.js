@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { requestFirebaseToken, onMessageListener } from '../lib/firebase';
+import { requestFirebaseToken, onMessageListener, messaging } from '../lib/firebase';
 import { supabase } from '../lib/supabase';
 import { useUserStore } from '../store/useUserStore';
 
@@ -7,7 +7,7 @@ export const usePushNotifications = () => {
   const session = useUserStore(state => state.session);
 
   useEffect(() => {
-    if (!session) return;
+    if (!session || !messaging) return;
 
     const registerToken = async () => {
       try {

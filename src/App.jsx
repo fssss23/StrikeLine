@@ -11,9 +11,18 @@ import SettingsPage from './pages/SettingsPage'
 import { SecurityDrawer } from './components/drawer/SecurityDrawer'
 import { useUserStore } from './store/useUserStore'
 
-function ProtectedRoute({ children, session }) {
+// ProtectedRoute removed as logic is handled at the App and Router level.
+
+export default function App() {
+  const session = useUserStore(state => state.session)
+  const initializeAuth = useUserStore(state => state.initializeAuth)
+
+  useEffect(() => {
+    const subscription = initializeAuth()
+    return () => subscription?.unsubscribe()
+  }, [initializeAuth])
+
   if (session === undefined) {
-    // Still checking — show nothing briefly (max 400ms)
     return (
       <div style={{
         minHeight: '100vh',
@@ -27,21 +36,14 @@ function ProtectedRoute({ children, session }) {
           borderTopColor: '#0D2F55', borderRadius: '50%',
           animation: 'spin 600ms linear infinite'
         }} />
+        <style>{`
+          @keyframes spin {
+            to { transform: rotate(360deg); }
+          }
+        `}</style>
       </div>
     )
   }
-  if (!session) return <Navigate to="/login" replace />
-  return children
-}
-
-export default function App() {
-  const session = useUserStore(state => state.session)
-  const initializeAuth = useUserStore(state => state.initializeAuth)
-
-  useEffect(() => {
-    const subscription = initializeAuth()
-    return () => subscription?.unsubscribe()
-  }, [initializeAuth])
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -51,9 +53,7 @@ export default function App() {
             session ? <Navigate to="/" replace /> : <LoginPage />
           } />
           <Route path="/" element={
-            <ProtectedRoute session={session}>
-              <AppShell />
-            </ProtectedRoute>
+            session ? <AppShell /> : <Navigate to="/login" replace />
           }>
             <Route index element={<DashboardPage />} />
             <Route path="history" element={<AlertHistoryPage />} />

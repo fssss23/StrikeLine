@@ -28,18 +28,27 @@ export const useUserStore = create((set, get) => ({
       return
     }
 
-    // Fetch user profile from Supabase
-    const { data: profile } = await supabase
-      .from('user_profiles')
-      .select('*')
-      .eq('id', session.user.id)
-      .single()
+    try {
+      // Fetch user profile from Supabase
+      const { data: profile, error } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('id', session.user.id)
+        .single()
+        
+      if (error) {
+        console.error('Error fetching user profile:', error)
+      }
 
-    set({ 
-      session, 
-      user: { ...session.user, ...profile }, 
-      isAuthenticated: true 
-    })
+      set({ 
+        session, 
+        user: { ...session.user, ...(profile || {}) }, 
+        isAuthenticated: true 
+      })
+    } catch (err) {
+      console.error('Unexpected error in setSession:', err)
+      set({ session, user: session.user, isAuthenticated: true })
+    }
   },
   
   clearSession: () => {
