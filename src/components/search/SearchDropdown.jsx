@@ -50,7 +50,7 @@ export const SearchDropdown = ({ results, query, onSelect, watchlist }) => {
                     </div>
                   ) : (
                     <span className="font-bold tabular-nums text-text-primary">
-                      {security.price.toFixed(2)}
+                      {typeof security.price === 'number' ? security.price.toFixed(2) : 'N/A'}
                     </span>
                   )}
                 </div>

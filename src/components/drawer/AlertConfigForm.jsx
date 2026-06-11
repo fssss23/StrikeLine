@@ -1,13 +1,15 @@
-import React, { useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
-import { AnimatePresence, motion } from 'framer-motion';
-import { Info, TrendingDown, TrendingUp, Zap } from 'lucide-react';
-import { toast } from 'sonner';
-import { useDrawer } from '../../hooks/useDrawer';
-import { AlertLevelRow } from './AlertLevelRow';
-import { Button } from '../ui/Button';
+import React, { useState, useEffect } from 'react'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import * as z from 'zod'
+import { useQueryClient } from '@tanstack/react-query'
+import { AnimatePresence, motion } from 'framer-motion'
+import { Info, TrendingDown, TrendingUp, Zap } from 'lucide-react'
+import { toast } from 'sonner'
+import { useDrawer } from '../../hooks/useDrawer'
+import { useUpdateAlertRule } from '../../hooks/queries/useAlertRuleQuery'
+import { AlertLevelRow } from './AlertLevelRow'
+import { Button } from '../ui/Button'
 
 const alertSchema = z.object({
   supportLevel: z.string().optional(),
@@ -19,117 +21,105 @@ const alertSchema = z.object({
   bufferPct: z.number().min(0).max(2),
   cooldownMinutes: z.number().min(30).max(1440),
 }).superRefine((data, ctx) => {
-  // Validate PKR format
   const checkLevel = (val, fieldName) => {
     if (val && (isNaN(parseFloat(val)) || parseFloat(val) <= 0 || parseFloat(val) >= 100000)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Enter a valid PKR price',
-        path: [fieldName]
-      });
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Enter a valid PKR price', path: [fieldName] })
     }
-  };
+  }
 
-  if (data.supportEnabled) checkLevel(data.supportLevel, 'supportLevel');
-  if (data.resistanceEnabled) checkLevel(data.resistanceLevel, 'resistanceLevel');
-  if (data.breakoutEnabled) checkLevel(data.breakoutLevel, 'breakoutLevel');
+  if (data.supportEnabled) checkLevel(data.supportLevel, 'supportLevel')
+  if (data.resistanceEnabled) checkLevel(data.resistanceLevel, 'resistanceLevel')
+  if (data.breakoutEnabled) checkLevel(data.breakoutLevel, 'breakoutLevel')
 
-  // Cross-field validations
-  const s = parseFloat(data.supportLevel);
-  const r = parseFloat(data.resistanceLevel);
-  const b = parseFloat(data.breakoutLevel);
+  const s = parseFloat(data.supportLevel)
+  const r = parseFloat(data.resistanceLevel)
+  const b = parseFloat(data.breakoutLevel)
 
   if (data.supportEnabled && data.resistanceEnabled && s && r && r <= s) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'Resistance must be > Support',
-      path: ['resistanceLevel']
-    });
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Resistance must be > Support', path: ['resistanceLevel'] })
   }
 
-  if (data.breakoutEnabled && b) {
-    if (data.resistanceEnabled && r && b <= r) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Breakout must be > Resistance',
-        path: ['breakoutLevel']
-      });
-    }
+  if (data.breakoutEnabled && b && data.resistanceEnabled && r && b <= r) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Breakout must be > Resistance', path: ['breakoutLevel'] })
   }
-});
+})
 
 export function AlertConfigForm() {
-  const { security, updateRule } = useDrawer();
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  
-  // Actually the hook is useWatchlistStore for updating
-  // Let's import the store directly if useDrawer doesn't have it exposed
-  const { useWatchlistStore } = require('../../store/useWatchlistStore');
-  const updateAlertRule = useWatchlistStore(state => state.updateAlertRule);
+  const { security } = useDrawer()
+  const updateMutation = useUpdateAlertRule()
+  const queryClient = useQueryClient()
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
 
-  const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm({
+  const { register, handleSubmit, watch, setValue, reset, formState: { errors } } = useForm({
     resolver: zodResolver(alertSchema),
     defaultValues: {
-      supportLevel: security?.support?.level ? String(security.support.level) : '',
-      resistanceLevel: security?.resistance?.level ? String(security.resistance.level) : '',
-      breakoutLevel: security?.breakout?.level ? String(security.breakout.level) : '',
-      supportEnabled: !!security?.support?.enabled,
-      resistanceEnabled: !!security?.resistance?.enabled,
-      breakoutEnabled: !!security?.breakout?.enabled,
-      bufferPct: security?.bufferPct ?? 0.5,
-      cooldownMinutes: security?.cooldownMinutes ?? 240,
+      supportLevel: '',
+      resistanceLevel: '',
+      breakoutLevel: '',
+      supportEnabled: false,
+      resistanceEnabled: false,
+      breakoutEnabled: false,
+      bufferPct: 0.5,
+      cooldownMinutes: 240,
     }
-  });
+  })
 
-  const bufferPct = watch('bufferPct');
-  const cooldownMinutes = watch('cooldownMinutes');
+  // Reset form whenever the drawer opens on a new symbol (security.alert_rule loads async)
+  useEffect(() => {
+    if (!security) return
+    const rule = security.alert_rule
+    reset({
+      supportLevel: rule?.support_level != null ? String(rule.support_level) : '',
+      resistanceLevel: rule?.resistance_level != null ? String(rule.resistance_level) : '',
+      breakoutLevel: rule?.breakout_level != null ? String(rule.breakout_level) : '',
+      supportEnabled: rule?.support_enabled ?? false,
+      resistanceEnabled: rule?.resistance_enabled ?? false,
+      breakoutEnabled: rule?.breakout_enabled ?? false,
+      bufferPct: rule?.buffer_pct ?? 0.5,
+      cooldownMinutes: rule?.cooldown_minutes ?? 240,
+    })
+  }, [security?.symbol, security?.alert_rule, reset])
+
+  const bufferPct = watch('bufferPct')
+  const cooldownMinutes = watch('cooldownMinutes')
 
   const formatCooldown = (mins) => {
-    if (mins < 60) return `${mins} minutes`;
-    const hrs = mins / 60;
-    return `${hrs} hour${hrs > 1 ? 's' : ''}`;
-  };
+    if (mins < 60) return `${mins} minutes`
+    const hrs = mins / 60
+    return `${hrs} hour${hrs > 1 ? 's' : ''}`
+  }
 
   const onSubmit = async (data) => {
-    setIsSaving(true);
-    // Simulate async network delay
-    await new Promise(res => setTimeout(res, 800));
-    
-    updateAlertRule(security.symbol, {
-      support: { 
-        level: data.supportEnabled ? parseFloat(data.supportLevel) : null,
-        enabled: data.supportEnabled,
-        lastTriggered: security?.support?.lastTriggered 
-      },
-      resistance: { 
-        level: data.resistanceEnabled ? parseFloat(data.resistanceLevel) : null,
-        enabled: data.resistanceEnabled,
-        lastTriggered: security?.resistance?.lastTriggered 
-      },
-      breakout: { 
-        level: data.breakoutEnabled ? parseFloat(data.breakoutLevel) : null,
-        enabled: data.breakoutEnabled,
-        lastTriggered: security?.breakout?.lastTriggered 
-      },
-      bufferPct: data.bufferPct,
-      cooldownMinutes: data.cooldownMinutes,
-    });
-
-    setIsSaving(false);
-    toast.success(`✓ Alert saved for ${security.symbol}`);
-  };
+    setIsSaving(true)
+    try {
+      await updateMutation.mutateAsync({
+        symbol: security.symbol,
+        support_level: data.supportEnabled && data.supportLevel ? parseFloat(data.supportLevel) : null,
+        support_enabled: data.supportEnabled,
+        resistance_level: data.resistanceEnabled && data.resistanceLevel ? parseFloat(data.resistanceLevel) : null,
+        resistance_enabled: data.resistanceEnabled,
+        breakout_level: data.breakoutEnabled && data.breakoutLevel ? parseFloat(data.breakoutLevel) : null,
+        breakout_enabled: data.breakoutEnabled,
+        buffer_pct: data.bufferPct,
+        cooldown_minutes: data.cooldownMinutes,
+      })
+      queryClient.invalidateQueries({ queryKey: ['drawer-security', security.symbol] })
+    } catch (_err) {
+      // error toast handled by mutation onError
+    } finally {
+      setIsSaving(false)
+    }
+  }
 
   const handleTestNotification = () => {
     toast('📱 Test notification sent to your device', {
       style: { backgroundColor: '#EEF2FF', color: '#1E40AF', borderColor: '#BFDBFE' }
-    });
-    setTimeout(() => {
-      toast.success('✓ Delivered successfully');
-    }, 1500);
-  };
+    })
+    setTimeout(() => toast.success('✓ Delivered successfully'), 1500)
+  }
 
-  if (!security) return null;
+  if (!security) return null
 
   return (
     <form onSubmit={handleSubmit(onSubmit)}>
@@ -145,33 +135,39 @@ export function AlertConfigForm() {
       </div>
 
       <div className="flex flex-col mb-4">
-        <AlertLevelRow 
+        <AlertLevelRow
           type="support" label="Support Level"
           icon={<TrendingDown size={16} />} color="green"
           register={register} watch={watch} setValue={setValue}
-          lastTriggered={security?.support?.lastTriggered}
+          lastTriggered={null}
         />
-        {errors.supportLevel && <span className="text-[12px] text-signal-red mt-1">{errors.supportLevel.message}</span>}
+        {errors.supportLevel && (
+          <span className="text-[12px] text-signal-red mt-1">{errors.supportLevel.message}</span>
+        )}
 
-        <AlertLevelRow 
+        <AlertLevelRow
           type="resistance" label="Resistance Level"
           icon={<TrendingUp size={16} />} color="red"
           register={register} watch={watch} setValue={setValue}
-          lastTriggered={security?.resistance?.lastTriggered}
+          lastTriggered={null}
         />
-        {errors.resistanceLevel && <span className="text-[12px] text-signal-red mt-1">{errors.resistanceLevel.message}</span>}
+        {errors.resistanceLevel && (
+          <span className="text-[12px] text-signal-red mt-1">{errors.resistanceLevel.message}</span>
+        )}
 
-        <AlertLevelRow 
+        <AlertLevelRow
           type="breakout" label="Breakout Level"
           icon={<Zap size={16} />} color="amber"
           register={register} watch={watch} setValue={setValue}
-          lastTriggered={security?.breakout?.lastTriggered}
+          lastTriggered={null}
         />
-        {errors.breakoutLevel && <span className="text-[12px] text-signal-red mt-1">{errors.breakoutLevel.message}</span>}
+        {errors.breakoutLevel && (
+          <span className="text-[12px] text-signal-red mt-1">{errors.breakoutLevel.message}</span>
+        )}
       </div>
 
-      <button 
-        type="button" 
+      <button
+        type="button"
         onClick={() => setShowAdvanced(!showAdvanced)}
         className="text-[13px] text-brand-blue font-medium hover:underline flex items-center mb-4"
       >
@@ -180,7 +176,7 @@ export function AlertConfigForm() {
 
       <AnimatePresence>
         {showAdvanced && (
-          <motion.div 
+          <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
@@ -191,7 +187,7 @@ export function AlertConfigForm() {
                 <span className="text-[14px] font-semibold text-text-primary">Notification Buffer</span>
                 <span className="text-[14px] font-bold text-brand-navy">{bufferPct.toFixed(1)}%</span>
               </div>
-              <input 
+              <input
                 type="range" min="0" max="2" step="0.1"
                 {...register('bufferPct', { valueAsNumber: true })}
                 className="w-full h-1.5 bg-surface-border rounded-lg appearance-none cursor-pointer custom-slider"
@@ -205,7 +201,7 @@ export function AlertConfigForm() {
                 <span className="text-[14px] font-semibold text-text-primary">Cooldown Period</span>
                 <span className="text-[14px] font-bold text-brand-navy">{formatCooldown(cooldownMinutes)}</span>
               </div>
-              <input 
+              <input
                 type="range" min="30" max="1440" step="30"
                 {...register('cooldownMinutes', { valueAsNumber: true })}
                 className="w-full h-1.5 bg-surface-border rounded-lg appearance-none cursor-pointer custom-slider"
@@ -221,8 +217,8 @@ export function AlertConfigForm() {
         <Button variant="primary" className="w-full" type="submit" disabled={isSaving}>
           {isSaving ? 'Saving...' : 'Save Alert'}
         </Button>
-        <button 
-          type="button" 
+        <button
+          type="button"
           onClick={handleTestNotification}
           className="text-[14px] text-brand-blue text-center hover:underline font-medium"
         >
@@ -230,5 +226,5 @@ export function AlertConfigForm() {
         </button>
       </div>
     </form>
-  );
+  )
 }

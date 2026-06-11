@@ -7,6 +7,7 @@ import { AppShell } from './components/layout/AppShell'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 import AlertHistoryPage from './pages/AlertHistoryPage'
+import WatchlistPage from './pages/WatchlistPage'
 import SettingsPage from './pages/SettingsPage'
 import { SecurityDrawer } from './components/drawer/SecurityDrawer'
 import { useUserStore } from './store/useUserStore'
@@ -56,6 +57,7 @@ export default function App() {
             session ? <AppShell /> : <Navigate to="/login" replace />
           }>
             <Route index element={<DashboardPage />} />
+            <Route path="watchlist" element={<WatchlistPage />} />
             <Route path="history" element={<AlertHistoryPage />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>
