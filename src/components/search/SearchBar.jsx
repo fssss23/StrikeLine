@@ -21,11 +21,16 @@ export const SearchBar = ({ className }) => {
         return;
       }
       
+      const safeQuery = query.replace(/"/g, '');
       const { data: securities, error } = await supabase
         .from('securities')
         .select('symbol, company_name, sector')
-        .or(`symbol.ilike.%${query}%,company_name.ilike.%${query}%`)
+        .or(`symbol.ilike."%${safeQuery}%",company_name.ilike."%${safeQuery}%"`)
         .limit(8);
+        
+      if (error) {
+        console.error("Search Error:", error.message, error.details);
+      }
         
       if (error || !securities) return;
       
