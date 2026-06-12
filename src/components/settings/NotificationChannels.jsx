@@ -1,10 +1,24 @@
 import { Bell, Smartphone, Mail } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { toast } from 'sonner';
 import { Toggle } from '../ui/Toggle';
 import { Input } from '../ui/Input';
+import { registerPushDevice } from '../../hooks/usePushNotifications';
 
 export function NotificationChannels({ user, onChange }) {
   const pushEnabled = user?.push_enabled ?? false;
+
+  const handlePushToggle = async (checked) => {
+    onChange({ push_enabled: checked });
+    if (!checked || !user?.id) return;
+    // Turning push on needs browser permission + a device token
+    const { ok, reason } = await registerPushDevice(user.id);
+    if (ok) {
+      toast.success('Push notifications enabled on this device');
+    } else {
+      toast.error(`Push setup incomplete: ${reason}`);
+    }
+  };
   const waEnabled = user?.whatsapp_enabled ?? false;
   const waNumber = user?.whatsapp_number ?? '';
   const emailEnabled = user?.email_alerts_enabled ?? false;
@@ -33,7 +47,7 @@ export function NotificationChannels({ user, onChange }) {
             )}
           </div>
           <div className="shrink-0 mt-1">
-            <Toggle checked={pushEnabled} onChange={(checked) => onChange({ push_enabled: checked })} />
+            <Toggle checked={pushEnabled} onChange={handlePushToggle} />
           </div>
         </div>
 

@@ -6,6 +6,7 @@ import { MobileNav } from './MobileNav';
 import { useUserStore } from '../../store/useUserStore';
 import { useRealtimePrices } from '../../hooks/useRealtimePrices';
 import { useRealtimeAlerts } from '../../hooks/useRealtimeAlerts';
+import { usePushNotifications } from '../../hooks/usePushNotifications';
 import { supabase } from '../../lib/supabase';
 
 const pageTitles = {
@@ -24,6 +25,7 @@ export const AppShell = () => {
 
   useRealtimePrices();
   useRealtimeAlerts();
+  usePushNotifications();
 
   useEffect(() => {
     const title = pageTitles[location.pathname];
