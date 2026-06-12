@@ -51,6 +51,26 @@ export const useUserStore = create((set, get) => ({
     }
   },
   
+  refreshProfile: async () => {
+    const session = get().session
+    if (!session) return
+    try {
+      const { data: profile, error } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('id', session.user.id)
+        .single()
+
+      if (error) {
+        console.error('Error refreshing user profile:', error)
+        return
+      }
+      set({ user: { ...session.user, ...(profile || {}) } })
+    } catch (err) {
+      console.error('Unexpected error refreshing profile:', err)
+    }
+  },
+
   clearSession: () => {
     set({ session: null, user: null, isAuthenticated: false })
   }

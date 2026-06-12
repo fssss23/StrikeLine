@@ -1,20 +1,34 @@
 import React, { useEffect } from 'react';
-import { Outlet, Navigate, useNavigate } from 'react-router-dom';
+import { Outlet, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { MobileNav } from './MobileNav';
 import { useUserStore } from '../../store/useUserStore';
 import { useRealtimePrices } from '../../hooks/useRealtimePrices';
+import { useRealtimeAlerts } from '../../hooks/useRealtimeAlerts';
 import { supabase } from '../../lib/supabase';
+
+const pageTitles = {
+  '/': 'Dashboard',
+  '/watchlist': 'Watchlist',
+  '/history': 'Alert History',
+  '/settings': 'Settings',
+};
 
 export const AppShell = () => {
   const isAuthenticated = useUserStore(state => state.isAuthenticated);
   const setSession = useUserStore(state => state.setSession);
   const clearSession = useUserStore(state => state.clearSession);
   const navigate = useNavigate();
+  const location = useLocation();
 
-  // Step 8 substitution
   useRealtimePrices();
+  useRealtimeAlerts();
+
+  useEffect(() => {
+    const title = pageTitles[location.pathname];
+    document.title = title ? `${title} | StrikeLine` : 'StrikeLine | PSX Price Alerts';
+  }, [location.pathname]);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {

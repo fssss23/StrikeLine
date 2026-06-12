@@ -1,0 +1,17 @@
+{
+  "name": "StrikeLine — PSX Price Alerts",
+  "short_name": "StrikeLine",
+  "description": "Real-time support, resistance, and breakout price alerts for the Pakistan Stock Exchange.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F8F9FB",
+  "theme_color": "#0D2F55",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

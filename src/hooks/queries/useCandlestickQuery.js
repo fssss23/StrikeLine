@@ -18,7 +18,7 @@ export const useCandlestickQuery = (symbol, timeframe = '1D') => {
 
       const { data: ticks, error } = await supabase
         .from('price_ticks')
-        .select('last_price, scraped_at')
+        .select('last_price, volume, scraped_at')
         .eq('symbol', symbol)
         .gte('scraped_at', startDate)
         .order('scraped_at', { ascending: true });
@@ -28,12 +28,12 @@ export const useCandlestickQuery = (symbol, timeframe = '1D') => {
 
       // Group into buckets
       const buckets = new Map();
-      
+
       ticks.forEach(tick => {
         const timestamp = new Date(tick.scraped_at).getTime();
         const bucketTime = Math.floor(timestamp / config.bucketMs) * config.bucketMs;
         const price = tick.last_price;
-        
+
         if (!buckets.has(bucketTime)) {
           buckets.set(bucketTime, {
             bucketTime,
@@ -41,13 +41,15 @@ export const useCandlestickQuery = (symbol, timeframe = '1D') => {
             high: price,
             low: price,
             close: price,
-            volume: Math.floor(Math.random() * 5000) + 1000 // mock volume as it's not in DB
+            // PSX reports cumulative daily volume — keep the latest reading in the bucket
+            volume: tick.volume ?? 0
           });
         } else {
           const b = buckets.get(bucketTime);
           b.high = Math.max(b.high, price);
           b.low = Math.min(b.low, price);
           b.close = price;
+          b.volume = tick.volume ?? b.volume;
         }
       });
 

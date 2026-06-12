@@ -2,46 +2,46 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
 import { useUserStore } from '../../store/useUserStore';
 
-export const useAlertHistory = (filters = {}) => {
+export const useAlertHistory = () => {
   const session = useUserStore(state => state.session);
 
   return useQuery({
-    queryKey: ['alert-history', filters],
+    queryKey: ['alert-history'],
     queryFn: async () => {
       if (!session) return [];
 
-      const { data, error } = await supabase
+      const { data: events, error } = await supabase
         .from('alert_events')
         .select('*')
         .eq('user_id', session.user.id)
         .order('triggered_at', { ascending: false })
-        .limit(100);
+        .limit(200);
 
       if (error) throw error;
-      if (!data) return [];
 
-      let result = data;
+      const items = events || [];
+      if (items.length === 0) return [];
 
-      if (filters.symbol && filters.symbol !== 'All') {
-        result = result.filter(e => e.symbol === filters.symbol);
-      }
-      
-      if (filters.levelType && filters.levelType !== 'All') {
-        result = result.filter(e => e.level_type === filters.levelType.toLowerCase());
-      }
-      
-      if (filters.dateRange && filters.dateRange !== 'All Time') {
-        const now = new Date();
-        const cutoff = new Date();
-        if (filters.dateRange === 'Today') cutoff.setDate(now.getDate() - 1);
-        if (filters.dateRange === 'Last 7 Days') cutoff.setDate(now.getDate() - 7);
-        if (filters.dateRange === 'Last 30 Days') cutoff.setDate(now.getDate() - 30);
-        
-        result = result.filter(e => new Date(e.triggered_at) >= cutoff);
+      // alert_events.symbol has no FK, so company names are merged manually
+      const symbols = [...new Set(items.map(e => e.symbol))];
+      const { data: securities, error: secError } = await supabase
+        .from('securities')
+        .select('symbol, company_name')
+        .in('symbol', symbols);
+
+      if (secError) console.error('Error fetching security names:', secError.message);
+
+      const nameMap = {};
+      for (const s of securities || []) {
+        nameMap[s.symbol] = s.company_name;
       }
 
-      return result;
+      return items.map(e => ({
+        ...e,
+        company_name: nameMap[e.symbol] ?? e.symbol
+      }));
     },
-    enabled: !!session
+    enabled: !!session,
+    staleTime: 60_000
   });
 };

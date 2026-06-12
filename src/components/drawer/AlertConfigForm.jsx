@@ -6,8 +6,10 @@ import { useQueryClient } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Info, TrendingDown, TrendingUp, Zap } from 'lucide-react'
 import { toast } from 'sonner'
+import { supabase } from '../../lib/supabase'
 import { useDrawer } from '../../hooks/useDrawer'
 import { useUpdateAlertRule } from '../../hooks/queries/useAlertRuleQuery'
+import { useLastTriggered } from '../../hooks/queries/useLastTriggeredQuery'
 import { AlertLevelRow } from './AlertLevelRow'
 import { Button } from '../ui/Button'
 
@@ -46,6 +48,7 @@ const alertSchema = z.object({
 
 export function AlertConfigForm() {
   const { security } = useDrawer()
+  const { data: lastTriggered } = useLastTriggered(security?.symbol)
   const updateMutation = useUpdateAlertRule()
   const queryClient = useQueryClient()
   const [showAdvanced, setShowAdvanced] = useState(false)
@@ -112,17 +115,32 @@ export function AlertConfigForm() {
     }
   }
 
-  const handleTestNotification = () => {
-    toast('📱 Test notification sent to your device', {
-      style: { backgroundColor: '#EEF2FF', color: '#1E40AF', borderColor: '#BFDBFE' }
-    })
-    setTimeout(() => toast.success('✓ Delivered successfully'), 1500)
+  const [isTesting, setIsTesting] = useState(false)
+
+  const handleTestNotification = async () => {
+    setIsTesting(true)
+    try {
+      const { data, error } = await supabase.functions.invoke('send-push', {
+        body: { test: true, symbol: security?.symbol }
+      })
+      if (error) throw error
+      if (data?.sent) {
+        toast.success('✓ Test notification delivered to your device')
+      } else {
+        toast(`Push not sent: ${data?.reason ?? 'enable push notifications in Settings first'}`)
+      }
+    } catch (err) {
+      console.error('Test notification failed:', err.message)
+      toast.error('Push notifications are not available yet')
+    } finally {
+      setIsTesting(false)
+    }
   }
 
   if (!security) return null
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)}>
+    <div>
       <div className="flex items-center gap-2 mb-2">
         <h3 className="text-[18px] font-bold text-text-primary">Alert Levels</h3>
         <div className="relative group cursor-help text-text-secondary">
@@ -139,7 +157,7 @@ export function AlertConfigForm() {
           type="support" label="Support Level"
           icon={<TrendingDown size={16} />} color="green"
           register={register} watch={watch} setValue={setValue}
-          lastTriggered={null}
+          lastTriggered={lastTriggered?.support ?? null}
         />
         {errors.supportLevel && (
           <span className="text-[12px] text-signal-red mt-1">{errors.supportLevel.message}</span>
@@ -149,7 +167,7 @@ export function AlertConfigForm() {
           type="resistance" label="Resistance Level"
           icon={<TrendingUp size={16} />} color="red"
           register={register} watch={watch} setValue={setValue}
-          lastTriggered={null}
+          lastTriggered={lastTriggered?.resistance ?? null}
         />
         {errors.resistanceLevel && (
           <span className="text-[12px] text-signal-red mt-1">{errors.resistanceLevel.message}</span>
@@ -159,7 +177,7 @@ export function AlertConfigForm() {
           type="breakout" label="Breakout Level"
           icon={<Zap size={16} />} color="amber"
           register={register} watch={watch} setValue={setValue}
-          lastTriggered={null}
+          lastTriggered={lastTriggered?.breakout ?? null}
         />
         {errors.breakoutLevel && (
           <span className="text-[12px] text-signal-red mt-1">{errors.breakoutLevel.message}</span>
@@ -214,17 +232,24 @@ export function AlertConfigForm() {
       </AnimatePresence>
 
       <div className="flex flex-col gap-3 mt-6">
-        <Button variant="primary" className="w-full" type="submit" disabled={isSaving}>
+        <Button
+          variant="primary"
+          className="w-full"
+          type="button"
+          disabled={isSaving}
+          onClick={handleSubmit(onSubmit)}
+        >
           {isSaving ? 'Saving...' : 'Save Alert'}
         </Button>
         <button
           type="button"
           onClick={handleTestNotification}
-          className="text-[14px] text-brand-blue text-center hover:underline font-medium"
+          disabled={isTesting}
+          className="text-[14px] text-brand-blue text-center hover:underline font-medium disabled:opacity-50"
         >
-          Send test notification
+          {isTesting ? 'Sending…' : 'Send test notification'}
         </button>
       </div>
-    </form>
+    </div>
   )
 }

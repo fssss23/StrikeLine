@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Badge } from '../ui/Badge'
 import { PriceChange } from '../ui/PriceChange'
 import { Button } from '../ui/Button'
@@ -5,13 +6,32 @@ import { AlertLevelBadge } from './AlertLevelBadge'
 import { usePriceFlash } from '../../hooks/usePriceFlash'
 import { useWatchlistStore } from '../../store/useWatchlistStore'
 
-export const WatchlistRow = ({ item }) => {
+// Distance from the live price to the nearest enabled alert level,
+// so users can see which alerts are close to firing
+const getNearestLevel = (price, rule) => {
+  if (price == null || !rule) return null
+  const levels = []
+  if (rule.support_enabled && rule.support_level) levels.push({ type: 'support', level: rule.support_level })
+  if (rule.resistance_enabled && rule.resistance_level) levels.push({ type: 'resistance', level: rule.resistance_level })
+  if (rule.breakout_enabled && rule.breakout_level) levels.push({ type: 'breakout', level: rule.breakout_level })
+  if (levels.length === 0) return null
+
+  let nearest = null
+  for (const l of levels) {
+    const pct = ((price - l.level) / l.level) * 100
+    if (!nearest || Math.abs(pct) < Math.abs(nearest.pct)) nearest = { ...l, pct }
+  }
+  return nearest
+}
+
+const WatchlistRowInner = ({ item }) => {
   const openDrawer = useWatchlistStore(state => state.openDrawer)
   const { flashClass } = usePriceFlash(item.price)
 
   const name = item.securities?.company_name ?? item.symbol
   const sector = item.securities?.sector ?? '—'
   const rule = item.alert_rule
+  const nearest = getNearestLevel(item.price, rule)
 
   return (
     <div
@@ -36,6 +56,11 @@ export const WatchlistRow = ({ item }) => {
           <p className={`text-price-sm font-bold tabular-nums text-text-primary rounded-sm px-1 -mx-1 transition-colors ${flashClass}`}>
             {item.price != null ? item.price.toFixed(2) : '—'}
           </p>
+          {nearest && (
+            <p className={`text-[11px] tabular-nums whitespace-nowrap ${Math.abs(nearest.pct) < 1 ? 'text-signal-amber font-medium' : 'text-text-secondary'}`}>
+              {Math.abs(nearest.pct).toFixed(1)}% {nearest.pct >= 0 ? 'above' : 'below'} {nearest.type}
+            </p>
+          )}
         </div>
         <div className="w-[80px] text-right">
           <PriceChange value={item.change_pct ?? null} absolute={item.change_abs ?? null} />
@@ -76,3 +101,11 @@ export const WatchlistRow = ({ item }) => {
     </div>
   )
 }
+
+// Re-render only when the live price or the alert rule actually changes
+export const WatchlistRow = memo(WatchlistRowInner, (prev, next) =>
+  prev.item.symbol === next.item.symbol &&
+  prev.item.price === next.item.price &&
+  prev.item.change_pct === next.item.change_pct &&
+  prev.item.alert_rule === next.item.alert_rule
+)

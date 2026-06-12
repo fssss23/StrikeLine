@@ -1,29 +1,13 @@
-import React, { useState } from 'react';
 import { Bell, Smartphone, Mail } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Toggle } from '../ui/Toggle';
 import { Input } from '../ui/Input';
-import { Button } from '../ui/Button';
 
-export function NotificationChannels({ user, isDirty, setDirty }) {
-  const [pushEnabled, setPushEnabled] = useState(true);
-  const [waEnabled, setWaEnabled] = useState(false);
-  const [waVerified, setWaVerified] = useState(false);
-  const [waLoading, setWaLoading] = useState(false);
-  const [emailEnabled, setEmailEnabled] = useState(false);
-
-  const handleToggle = (setter) => (checked) => {
-    setter(checked);
-    setDirty(true);
-  };
-
-  const handleVerify = async () => {
-    setWaLoading(true);
-    await new Promise(r => setTimeout(r, 1000));
-    setWaLoading(false);
-    setWaVerified(true);
-    setDirty(true);
-  };
+export function NotificationChannels({ user, onChange }) {
+  const pushEnabled = user?.push_enabled ?? false;
+  const waEnabled = user?.whatsapp_enabled ?? false;
+  const waNumber = user?.whatsapp_number ?? '';
+  const emailEnabled = user?.email_alerts_enabled ?? false;
 
   return (
     <div className="bg-white border border-surface-border rounded-[12px] shadow-sm mb-6">
@@ -42,15 +26,14 @@ export function NotificationChannels({ user, isDirty, setDirty }) {
             <h4 className="text-[15px] font-bold text-text-primary mb-1">Push Notifications</h4>
             {pushEnabled ? (
               <p className="text-[13px] text-signal-green font-medium">
-                Connected — iPhone 14 Pro
-                <span className="text-brand-blue ml-3 hover:underline cursor-pointer">Send test</span>
+                Enabled — alerts will be delivered to this device
               </p>
             ) : (
               <p className="text-[13px] text-text-secondary">Enable to receive alerts on your mobile device</p>
             )}
           </div>
           <div className="shrink-0 mt-1">
-            <Toggle checked={pushEnabled} onChange={handleToggle(setPushEnabled)} />
+            <Toggle checked={pushEnabled} onChange={(checked) => onChange({ push_enabled: checked })} />
           </div>
         </div>
 
@@ -65,41 +48,41 @@ export function NotificationChannels({ user, isDirty, setDirty }) {
           <div className="flex-1 min-w-0">
             <h4 className="text-[15px] font-bold text-text-primary mb-1">WhatsApp</h4>
             <p className="text-[13px] text-text-secondary">Instant alerts via WhatsApp message</p>
-            
+
             <AnimatePresence>
               {waEnabled && (
-                <motion.div 
+                <motion.div
                   initial={{ height: 0, opacity: 0 }}
                   animate={{ height: 'auto', opacity: 1 }}
                   exit={{ height: 0, opacity: 0 }}
                   className="overflow-hidden mt-3"
                 >
-                  {waVerified ? (
-                    <p className="text-[13px] text-text-secondary mt-1">
-                      Verified: +92 300 1234567 
-                      <span className="text-brand-blue ml-3 hover:underline cursor-pointer">Change number</span>
-                    </p>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <div className="w-[90px]">
-                        <select className="h-[40px] w-full px-3 border border-surface-border rounded-[8px] bg-white text-[14px] text-text-primary outline-none focus:border-brand-blue">
-                          <option>+92 🇵🇰</option>
-                        </select>
-                      </div>
-                      <div className="flex-1">
-                        <Input placeholder="300 1234567" />
-                      </div>
-                      <Button variant="secondary" onClick={handleVerify} disabled={waLoading}>
-                        {waLoading ? '...' : 'Verify'}
-                      </Button>
+                  <div className="flex items-center gap-2">
+                    <div className="w-[90px]">
+                      <select
+                        className="h-[40px] w-full px-3 border border-surface-border rounded-[8px] bg-white text-[14px] text-text-primary outline-none focus:border-brand-blue"
+                        defaultValue="+92"
+                      >
+                        <option value="+92">+92 🇵🇰</option>
+                      </select>
                     </div>
-                  )}
+                    <div className="flex-1">
+                      <Input
+                        placeholder="300 1234567"
+                        value={waNumber}
+                        onChange={(e) => onChange({ whatsapp_number: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-text-secondary mt-1.5">
+                    Enter your number without the leading zero, e.g. 3001234567
+                  </p>
                 </motion.div>
               )}
             </AnimatePresence>
           </div>
           <div className="shrink-0 mt-1">
-            <Toggle checked={waEnabled} onChange={handleToggle(setWaEnabled)} />
+            <Toggle checked={waEnabled} onChange={(checked) => onChange({ whatsapp_enabled: checked })} />
           </div>
         </div>
 
@@ -112,15 +95,14 @@ export function NotificationChannels({ user, isDirty, setDirty }) {
             <h4 className="text-[15px] font-bold text-text-primary mb-1">Email</h4>
             {emailEnabled ? (
               <p className="text-[13px] text-text-secondary font-medium">
-                Alerts will be sent to {user?.email || 'user@example.com'}
-                <span className="text-brand-blue ml-3 hover:underline cursor-pointer">Change email</span>
+                Alerts will be sent to {user?.email || 'your account email'}
               </p>
             ) : (
               <p className="text-[13px] text-text-secondary">Enable to receive alerts via email</p>
             )}
           </div>
           <div className="shrink-0 mt-1">
-            <Toggle checked={emailEnabled} onChange={handleToggle(setEmailEnabled)} />
+            <Toggle checked={emailEnabled} onChange={(checked) => onChange({ email_alerts_enabled: checked })} />
           </div>
         </div>
       </div>

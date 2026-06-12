@@ -11,19 +11,24 @@ import { toast } from 'sonner';
 export default function SettingsPage() {
   const user = useUserStore(state => state.user);
   const session = useUserStore(state => state.session);
+  const refreshProfile = useUserStore(state => state.refreshProfile);
   const [isDirty, setDirty] = useState(false);
+  const [isSaving, setSaving] = useState(false);
   const [localUser, setLocalUser] = useState(user);
 
   useEffect(() => {
-    setLocalUser(user);
-  }, [user]);
+    // Only re-sync from the store while there are no unsaved local edits
+    if (!isDirty) setLocalUser(user);
+  }, [user, isDirty]);
 
   const handleSave = async () => {
-    if (!session) return;
+    if (!session || !localUser) return;
+    setSaving(true);
     try {
       const { error } = await supabase
         .from('user_profiles')
         .update({
+          display_name: localUser.display_name,
           push_enabled: localUser.push_enabled,
           whatsapp_enabled: localUser.whatsapp_enabled,
           whatsapp_number: localUser.whatsapp_number,
@@ -33,14 +38,26 @@ export default function SettingsPage() {
           buffer_pct: localUser.buffer_pct
         })
         .eq('id', session.user.id);
-        
+
       if (error) throw error;
       toast.success('Settings saved');
       setDirty(false);
+      await refreshProfile();
     } catch (err) {
+      console.error('Failed to save settings:', err.message);
       toast.error(`Failed to save settings: ${err.message}`);
+    } finally {
+      setSaving(false);
     }
   };
+
+  if (!localUser) {
+    return (
+      <div className="max-w-[1200px] mx-auto w-full flex items-center justify-center py-24">
+        <div className="w-8 h-8 rounded-full border-[3px] border-surface-border border-t-brand-blue animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-[1200px] mx-auto w-full relative">
@@ -66,11 +83,11 @@ export default function SettingsPage() {
                 {isDirty ? 'Unsaved changes' : ''}
               </span>
               <div className="flex gap-3">
-                <Button variant="ghost" onClick={() => { setLocalUser(user); setDirty(false); }} disabled={!isDirty}>
+                <Button variant="ghost" onClick={() => { setLocalUser(user); setDirty(false); }} disabled={!isDirty || isSaving}>
                   Discard changes
                 </Button>
-                <Button variant="primary" onClick={handleSave} disabled={!isDirty}>
-                  Save Changes
+                <Button variant="primary" onClick={handleSave} disabled={!isDirty || isSaving}>
+                  {isSaving ? 'Saving…' : 'Save Changes'}
                 </Button>
               </div>
             </div>

@@ -99,7 +99,11 @@ export function CandlestickChart({ activeTimeframe }) {
   const { security } = useDrawer();
   const { data = [], isLoading } = useCandlestickQuery(security?.symbol, activeTimeframe);
 
-  const hasLevels = security?.support?.enabled || security?.resistance?.enabled || security?.breakout?.enabled;
+  const rule = security?.alert_rule;
+  const supportLevel = rule?.support_enabled && rule?.support_level ? Number(rule.support_level) : null;
+  const resistanceLevel = rule?.resistance_enabled && rule?.resistance_level ? Number(rule.resistance_level) : null;
+  const breakoutLevel = rule?.breakout_enabled && rule?.breakout_level ? Number(rule.breakout_level) : null;
+  const hasLevels = supportLevel != null || resistanceLevel != null || breakoutLevel != null;
 
   if (isLoading) {
     return (
@@ -151,31 +155,31 @@ export function CandlestickChart({ activeTimeframe }) {
             ))}
           </Bar>
 
-          {security?.support?.enabled && security?.support?.level && (
+          {supportLevel != null && (
             <ReferenceLine
-              y={parseFloat(security.support.level)}
+              y={supportLevel}
               stroke="#16A34A"
               strokeDasharray="4 3"
               strokeWidth={1.5}
-              label={<ChartLevelLabel type="support" value={parseFloat(security.support.level)} />}
+              label={<ChartLevelLabel type="support" value={supportLevel} />}
             />
           )}
-          {security?.resistance?.enabled && security?.resistance?.level && (
+          {resistanceLevel != null && (
             <ReferenceLine
-              y={parseFloat(security.resistance.level)}
+              y={resistanceLevel}
               stroke="#DC2626"
               strokeDasharray="4 3"
               strokeWidth={1.5}
-              label={<ChartLevelLabel type="resistance" value={parseFloat(security.resistance.level)} />}
+              label={<ChartLevelLabel type="resistance" value={resistanceLevel} />}
             />
           )}
-          {security?.breakout?.enabled && security?.breakout?.level && (
+          {breakoutLevel != null && (
             <ReferenceLine
-              y={parseFloat(security.breakout.level)}
+              y={breakoutLevel}
               stroke="#D97706"
               strokeDasharray="4 3"
               strokeWidth={1.5}
-              label={<ChartLevelLabel type="breakout" value={parseFloat(security.breakout.level)} />}
+              label={<ChartLevelLabel type="breakout" value={breakoutLevel} />}
             />
           )}
         </ComposedChart>

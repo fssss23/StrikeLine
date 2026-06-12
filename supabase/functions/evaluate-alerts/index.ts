@@ -94,7 +94,7 @@ async function processAlert(
   levelValue: number
 ) {
   // 4. Cooldown Check
-  // Determine cooldown threshold time
+  // alert_events uses triggered_at (not created_at)
   const cooldownMs = (rule.cooldown_minutes || 0) * 60 * 1000
   const cooldownThreshold = new Date(Date.now() - cooldownMs).toISOString()
 
@@ -104,7 +104,7 @@ async function processAlert(
     .eq('user_id', rule.user_id)
     .eq('symbol', rule.symbol)
     .eq('level_type', levelType)
-    .gte('created_at', cooldownThreshold)
+    .gte('triggered_at', cooldownThreshold)
     .limit(1)
 
   if (recentError) {
@@ -118,65 +118,124 @@ async function processAlert(
   }
 
   // 5. Execution
-  // Insert a log into the alert_events table
-  const { error: insertError } = await supabase.from('alert_events').insert({
-    user_id: rule.user_id,
-    rule_id: rule.id,
-    symbol: rule.symbol,
-    level_type: levelType,
-    trigger_price: actualPrice,
-    level_value: levelValue
-  })
+  // Insert a log into alert_events — schema columns are
+  // (user_id, symbol, level_type, level_value, actual_price, push_status, triggered_at)
+  const { data: insertedEvent, error: insertError } = await supabase
+    .from('alert_events')
+    .insert({
+      user_id: rule.user_id,
+      symbol: rule.symbol,
+      level_type: levelType,
+      level_value: levelValue,
+      actual_price: actualPrice,
+      push_status: 'pending',
+      triggered_at: new Date().toISOString()
+    })
+    .select('id')
+    .single()
 
   if (insertError) {
     console.error('Error inserting alert event:', insertError)
     return
   }
 
+  let pushStatus = 'skipped'
+  // Outcome per attempted channel; 'skipped' means a channel wasn't enabled
+  const outcomes: string[] = []
+
   // Query user_profiles for notification preferences
   const { data: profile, error: profileError } = await supabase
     .from('user_profiles')
-    .select('whatsapp_enabled, whatsapp_number')
+    .select('whatsapp_enabled, whatsapp_number, push_enabled, fcm_token')
     .eq('id', rule.user_id)
     .single()
 
   if (profileError || !profile) {
     console.error('Error fetching user profile:', profileError)
-    return
-  }
-
-  // 6. WhatsApp Dispatch
-  if (profile.whatsapp_enabled && profile.whatsapp_number) {
+    pushStatus = 'failed'
+  } else if (profile.whatsapp_enabled && profile.whatsapp_number) {
+    // 6. WhatsApp Dispatch via Fonnte
     const fonnteToken = Deno.env.get('FONNTE_TOKEN')
     if (!fonnteToken) {
       console.error('FONNTE_TOKEN environment variable is missing')
-      return
-    }
+      pushStatus = 'failed'
+    } else {
+      const formattedText = `⚡ StrikeLine Alert\n${rule.symbol} hit your ${levelType} level\nPrice: PKR ${actualPrice}\nLevel: PKR ${levelValue}`
 
-    const formattedText = `⚡ StrikeLine Alert\n${rule.symbol} hit your ${levelType} level\nPrice: PKR ${actualPrice}\nLevel: PKR ${levelValue}`
-
-    try {
-      const response = await fetch('https://api.fonnte.com/send', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${fonnteToken}`,
-          'Content-Type': 'application/json' // Specified per user requirements structure
-        },
-        body: JSON.stringify({
+      try {
+        // Fonnte expects the raw token in Authorization (no "Bearer" prefix)
+        // and a form-encoded body
+        const body = new URLSearchParams({
           target: profile.whatsapp_number,
           message: formattedText,
           countryCode: '92'
         })
-      })
 
-      const result = await response.json()
-      if (!response.ok || !result.status) {
-        console.error('Failed to send WhatsApp message via Fonnte:', result)
-      } else {
-        console.log(`WhatsApp message sent successfully to ${profile.whatsapp_number}`)
+        const response = await fetch('https://api.fonnte.com/send', {
+          method: 'POST',
+          headers: { 'Authorization': fonnteToken },
+          body
+        })
+
+        const result = await response.json()
+        if (!response.ok || result.status === false) {
+          console.error('Failed to send WhatsApp message via Fonnte:', result)
+          outcomes.push('failed')
+        } else {
+          console.log(`WhatsApp message sent successfully to ${profile.whatsapp_number}`)
+          outcomes.push('sent')
+        }
+      } catch (fetchError) {
+        console.error('Error during WhatsApp fetch:', fetchError)
+        outcomes.push('failed')
       }
-    } catch (fetchError) {
-      console.error('Error during WhatsApp fetch:', fetchError)
     }
+  }
+
+  // Web push via the send-push function (FCM); skipped silently when the user
+  // has push disabled, no device token, or FIREBASE_SERVICE_ACCOUNT isn't set
+  if (profile && profile.push_enabled && profile.fcm_token) {
+    try {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+      const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+      const pushRes = await fetch(`${supabaseUrl}/functions/v1/send-push`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${serviceKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          user_id: rule.user_id,
+          title: `⚡ ${rule.symbol} hit your ${levelType} level`,
+          body: `Price: PKR ${actualPrice} · Level: PKR ${levelValue}`,
+          data: { symbol: rule.symbol, level_type: levelType }
+        })
+      })
+      const pushResult = await pushRes.json()
+      if (pushResult.sent) {
+        outcomes.push('sent')
+      } else if (!pushResult.skipped) {
+        console.error('Push dispatch failed:', pushResult.reason)
+        outcomes.push('failed')
+      }
+    } catch (pushError) {
+      console.error('Error invoking send-push:', pushError)
+      outcomes.push('failed')
+    }
+  }
+
+  // Final status: sent if any channel delivered, failed if all attempts failed,
+  // skipped when no channel was enabled at all
+  if (outcomes.includes('sent')) pushStatus = 'sent'
+  else if (outcomes.includes('failed')) pushStatus = 'failed'
+
+  // Record the final dispatch outcome on the event row
+  const { error: statusError } = await supabase
+    .from('alert_events')
+    .update({ push_status: pushStatus })
+    .eq('id', insertedEvent.id)
+
+  if (statusError) {
+    console.error('Error updating push_status:', statusError)
   }
 }

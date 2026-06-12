@@ -1,9 +1,7 @@
-import React, { useState } from 'react';
-import { Calendar, Search, Filter } from 'lucide-react';
+import { useState } from 'react';
 import { Input } from '../ui/Input';
-import { mockSecurities } from '../../data/mockData';
 
-export function HistoryFilterBar({ filters, setFilters, onClear }) {
+export function HistoryFilterBar({ filters, setFilters, onClear, symbols = [] }) {
   const [localFilters, setLocalFilters] = useState(filters);
   const hasActiveFilters = localFilters.dateFrom || localFilters.dateTo || localFilters.security !== 'All' || localFilters.types.length > 0 || localFilters.status !== 'All';
 
@@ -53,7 +51,7 @@ export function HistoryFilterBar({ filters, setFilters, onClear }) {
           onChange={e => updateFilter('security', e.target.value)}
         >
           <option value="All">All securities</option>
-          {mockSecurities.map(s => <option key={s.symbol} value={s.symbol}>{s.symbol}</option>)}
+          {symbols.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
 
         {/* Type Pills */}

@@ -1,22 +1,34 @@
-import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Bookmark, Bell, Clock, Settings, LogOut } from 'lucide-react';
+import { LayoutDashboard, Bookmark, Clock, Settings, LogOut } from 'lucide-react';
+import { toast } from 'sonner';
 import { StrikeLineLogo } from '../logo/StrikeLineLogo';
-import { useAlertStore } from '../../store/useAlertStore';
+import { useActiveAlerts } from '../../hooks/useActiveAlerts';
 import { useUserStore } from '../../store/useUserStore';
+import { supabase } from '../../lib/supabase';
 import { cn } from '../../lib/utils';
 
 export const Sidebar = ({ className }) => {
-  const activeAlerts = useAlertStore((state) => state.activeAlerts);
-  const { user, logout } = useUserStore();
+  const activeAlerts = useActiveAlerts();
+  const user = useUserStore(state => state.user);
+
+  const handleLogout = async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+    } catch (err) {
+      console.error('Logout failed:', err.message);
+      toast.error('Failed to sign out — please try again');
+    }
+  };
 
   const navItems = [
     { name: 'Dashboard', path: '/', icon: LayoutDashboard },
     { name: 'Watchlist', path: '/watchlist', icon: Bookmark },
-    { name: 'Alerts', path: '/alerts', icon: Bell, badge: activeAlerts },
     { name: 'History', path: '/history', icon: Clock, badge: activeAlerts },
     { name: 'Settings', path: '/settings', icon: Settings },
   ];
+
+  const displayName = user?.display_name || user?.email?.split('@')[0] || 'User';
 
   return (
     <aside className={cn("bg-brand-navy w-[240px] flex-col h-full hidden md:flex", className)}>
@@ -31,8 +43,8 @@ export const Sidebar = ({ className }) => {
             to={item.path}
             className={({ isActive }) => cn(
               "flex items-center gap-3 h-11 px-4 rounded-sm transition-colors border-l-[3px]",
-              isActive 
-                ? "text-text-inverse border-brand-blue bg-white/5" 
+              isActive
+                ? "text-text-inverse border-brand-blue bg-white/5"
                 : "text-sidebar-textInactive border-transparent hover:bg-white/5 hover:text-text-inverse"
             )}
           >
@@ -50,15 +62,16 @@ export const Sidebar = ({ className }) => {
       <div className="p-4 border-t border-white/10">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-brand-navyLight flex items-center justify-center text-text-inverse font-semibold text-sm shrink-0">
-            {(user?.name || user?.email || 'U').substring(0, 2).toUpperCase()}
+            {displayName.substring(0, 2).toUpperCase()}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-text-inverse truncate">{user?.name || 'User'}</p>
+            <p className="text-sm font-medium text-text-inverse truncate">{displayName}</p>
             <p className="text-xs text-sidebar-textInactive truncate">{user?.email}</p>
           </div>
-          <button 
-            onClick={logout}
+          <button
+            onClick={handleLogout}
             className="text-sidebar-textInactive hover:text-text-inverse transition-colors shrink-0 p-1"
+            aria-label="Sign out"
           >
             <LogOut className="w-5 h-5" />
           </button>

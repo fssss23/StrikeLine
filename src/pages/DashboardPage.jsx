@@ -1,12 +1,12 @@
-import React from 'react';
+import { Link } from 'react-router-dom';
 import { SearchBar } from '../components/search/SearchBar';
 import { SummaryCards } from '../components/dashboard/SummaryCards';
 import { WatchlistTable } from '../components/watchlist/WatchlistTable';
 import { useWatchlist } from '../hooks/queries/useWatchlistQuery';
 
 export default function DashboardPage() {
-  const { data: watchlist = [] } = useWatchlist();
-  const watchlistCount = watchlist.length;
+  const { data: watchlist } = useWatchlist();
+  const watchlistCount = (watchlist || []).length;
 
   return (
     <div className="max-w-7xl mx-auto w-full">
@@ -24,11 +24,14 @@ export default function DashboardPage() {
               {watchlistCount}
             </span>
           </div>
-          <button className="text-sm font-medium text-brand-blue hover:text-brand-navy transition-colors">
+          <Link
+            to="/watchlist"
+            className="text-sm font-medium text-brand-blue hover:text-brand-navy transition-colors"
+          >
             Manage
-          </button>
+          </Link>
         </div>
-        
+
         <WatchlistTable />
       </div>
     </div>

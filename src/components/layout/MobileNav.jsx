@@ -1,17 +1,15 @@
-import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Bookmark, Bell, Clock, Settings } from 'lucide-react';
-import { useAlertStore } from '../../store/useAlertStore';
+import { LayoutDashboard, Bookmark, Clock, Settings } from 'lucide-react';
+import { useActiveAlerts } from '../../hooks/useActiveAlerts';
 import { cn } from '../../lib/utils';
 
 export const MobileNav = () => {
-  const activeAlerts = useAlertStore((state) => state.activeAlerts);
+  const activeAlerts = useActiveAlerts();
 
   const navItems = [
     { name: 'Dashboard', path: '/', icon: LayoutDashboard },
     { name: 'Watchlist', path: '/watchlist', icon: Bookmark },
-    { name: 'Alerts', path: '/alerts', icon: Bell, badge: activeAlerts },
-    { name: 'History', path: '/history', icon: Clock },
+    { name: 'History', path: '/history', icon: Clock, badge: activeAlerts },
     { name: 'Settings', path: '/settings', icon: Settings },
   ];
 
