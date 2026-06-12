@@ -48,17 +48,24 @@ async function fetchPsx(path: string): Promise<Response> {
   return res
 }
 
-const PKT_OPEN  = { hour: 9,  minute: 15 }
-const PKT_CLOSE = { hour: 15, minute: 35 } // small tail so the closing tick is captured
+function pktNow(): Date {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Karachi' }))
+}
 
+// PSX hours (PKT): Mon–Thu 09:15–15:30; Friday trades two sessions around
+// the Jumma break, 09:15–12:00 and 14:30–16:30. A small tail is added so
+// the closing tick is always captured.
 function isMarketOpen(): boolean {
-  const now = new Date()
-  const pkt = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Karachi' }))
+  const pkt = pktNow()
   const day = pkt.getDay()
   if (day === 0 || day === 6) return false
   const mins = pkt.getHours() * 60 + pkt.getMinutes()
-  return mins >= PKT_OPEN.hour * 60 + PKT_OPEN.minute &&
-         mins <= PKT_CLOSE.hour * 60 + PKT_CLOSE.minute
+  const open = 9 * 60 + 15
+  if (day === 5) {
+    return (mins >= open && mins <= 12 * 60 + 5) ||
+           (mins >= 14 * 60 + 30 && mins <= 16 * 60 + 35)
+  }
+  return mins >= open && mins <= 15 * 60 + 35
 }
 
 function parseNumber(raw: unknown): number | null {
@@ -86,6 +93,7 @@ interface Tick {
   volume: number | null
   change_abs: number | null
   change_pct: number | null
+  company_name?: string | null // parsed for auto-discovery; never inserted into price_ticks
 }
 
 // Fallback parser for the server-rendered market-watch HTML table.
@@ -97,8 +105,10 @@ function parseHtmlTable(html: string): Tick[] {
     if (cells.length < 11) continue
     const symbol = cells[0].toUpperCase()
     if (!symbol || !/^[A-Z0-9.]+$/.test(symbol)) continue
+    const companyName = rowMatch[1].match(/data-title="([^"]+)"/)?.[1]?.replace(/&amp;/g, '&') ?? null
     rows.push({
       symbol,
+      company_name: companyName,
       open_price: parseNumber(cells[4]),
       high_price: parseNumber(cells[5]),
       low_price: parseNumber(cells[6]),
@@ -114,6 +124,7 @@ function parseHtmlTable(html: string): Tick[] {
 function normalizeJsonRow(row: any): Tick {
   return {
     symbol: String(row.symbol ?? row.SYMBOL ?? '').toUpperCase(),
+    company_name: row.name ?? row.NAME ?? null,
     // IMPORTANT: prefer the live price; LDCP is *yesterday's* close and only a last resort
     last_price: parseNumber(row.last ?? row.current ?? row.LAST ?? row.CURRENT ?? row.price ?? row.ldcp ?? row.LDCP),
     open_price: parseNumber(row.open ?? row.OPEN),
@@ -204,20 +215,57 @@ Deno.serve(async (req: Request) => {
       )
     }
 
-    const { data: securities, error: secError } = await supabase.from('securities').select('symbol')
-    if (secError) throw secError
-    const trackedSymbols = new Set((securities || []).map((s: { symbol: string }) => s.symbol))
+    // Tick strategy: every minute for "active" symbols (on a watchlist or an
+    // alert rule) + KSE100; a FULL market snapshot every 30 minutes so every
+    // security shows a reasonably fresh price without exploding row volume.
+    const snapshot = force || pktNow().getMinutes() % 30 === 0
+
+    const [secRes, wlRes, arRes] = await Promise.all([
+      supabase.from('securities').select('symbol'),
+      supabase.from('watchlist_items').select('symbol'),
+      supabase.from('alert_rules').select('symbol'),
+    ])
+    if (secRes.error) throw secRes.error
+    const trackedSymbols = new Set((secRes.data || []).map((s: { symbol: string }) => s.symbol))
+
+    const activeSymbols = new Set<string>(['KSE100'])
+    for (const r of wlRes.data || []) activeSymbols.add(r.symbol)
+    for (const r of arRes.data || []) activeSymbols.add(r.symbol)
+
+    // Auto-discovery (snapshot runs): any symbol PSX lists that we don't
+    // know yet gets added to securities, so new listings appear in search
+    let discovered = 0
+    if (snapshot) {
+      const newSecurities = rawData
+        .filter(t => !trackedSymbols.has(t.symbol) && t.company_name)
+        .map(t => ({ symbol: t.symbol, company_name: t.company_name, sector: null }))
+      if (newSecurities.length > 0) {
+        const { error: discError } = await supabase
+          .from('securities')
+          .upsert(newSecurities, { onConflict: 'symbol', ignoreDuplicates: true })
+        if (discError) {
+          console.error('Auto-discovery insert failed (non-fatal):', discError.message)
+        } else {
+          discovered = newSecurities.length
+          for (const s of newSecurities) trackedSymbols.add(s.symbol)
+        }
+      }
+    }
 
     const scrapedAt = new Date().toISOString()
     const ticks = rawData
       .filter(t => trackedSymbols.has(t.symbol))
+      .filter(t => snapshot || activeSymbols.has(t.symbol))
       .filter(t => t.last_price != null && t.last_price > 0 && t.last_price < 1000000)
-      .map(t => ({ ...t, scraped_at: scrapedAt }))
+      .map(({ company_name: _name, ...t }) => ({ ...t, scraped_at: scrapedAt }))
 
     // Index tick — only if KSE100 is seeded in securities (FK on price_ticks.symbol)
     if (trackedSymbols.has('KSE100')) {
       const kse = await fetchKse100()
-      if (kse) ticks.push({ ...kse, scraped_at: scrapedAt })
+      if (kse) {
+        const { company_name: _n, ...kseTick } = kse
+        ticks.push({ ...kseTick, scraped_at: scrapedAt })
+      }
     }
 
     if (ticks.length === 0) {
@@ -246,7 +294,7 @@ Deno.serve(async (req: Request) => {
     }
 
     return new Response(
-      JSON.stringify({ status: 'ok', ticks_inserted: ticks.length, alertsEvaluated, scrapedAt }),
+      JSON.stringify({ status: 'ok', ticks_inserted: ticks.length, snapshot, discovered, alertsEvaluated, scrapedAt }),
       { headers: { 'Content-Type': 'application/json' } }
     )
   } catch (err: any) {
