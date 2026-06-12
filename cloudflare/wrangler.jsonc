@@ -1,0 +1,14 @@
+{
+  "name": "psx-proxy",
+  "main": "psx-proxy-worker.js",
+  "compatibility_date": "2026-06-01",
+  "workers_dev": true,
+  // Run near PSX's origin when possible; the DO relay below is the
+  // deterministic fallback for colos whose egress PSX blocks
+  "placement": { "mode": "smart" },
+  "observability": { "enabled": true },
+  "durable_objects": {
+    "bindings": [{ "name": "PSX_RELAY", "class_name": "PsxRelay" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["PsxRelay"] }]
+}
