@@ -29,13 +29,20 @@ Prioritized future work. Items at the top unlock the most value.
 - [x] ✅ **Realtime channel for `alert_events`** — `useRealtimeAlerts.js` (mounted in AppShell) toasts in-app the moment an alert fires and refreshes History. **Needs**: `supabase/setup.sql` section 2 (adds `alert_events` to the realtime publication).
 - [x] ✅ **Account deletion server-side** — `supabase/functions/delete-account/index.ts` deletes all user data + the auth user (caller can only delete themselves). Settings falls back to client-side data deletion if the function isn't deployed. **Needs**: deploy.
 - [ ] **iOS push support** — Safari PWA web push (iOS 16.4+); needs the PWA installed to home screen, the existing manifest (done) and the service worker (template done — fill config).
-- [ ] **Admin / scraper health dashboard** — a simple page (or just a Supabase view) showing last successful scrape time, ticks-per-run, and evaluate-alerts outcomes, with an alert if scraping stalls during market hours.
+- [x] ✅ **Admin / scraper health dashboard** — `/admin` page (admin-only via `user_profiles.is_admin`), backed by the `admin-api` edge function. Shows system stats, scraper health (last scrape, ticks/run, stall detection), global alert kill switches (WhatsApp + pause-all, stored in `app_settings`), a searchable users table (emails, channels, restrict/unrestrict, grant admin), and a recent-alerts feed. **Needs**: run `supabase/admin-setup.sql`, deploy `admin-api`, redeploy `evaluate-alerts`.
 - [ ] **E2E smoke tests** — Playwright: login → search → open drawer → add to watchlist → set alert → verify rule row in DB.
 
 ## OPERATOR CHECKLIST (manual steps — in order)
 
 1. **Run `supabase/setup.sql`** in the Supabase SQL editor (fill in `<project-ref>` + `<service-role-key>` in section 4 first). Covers: KSE100 seed, realtime publication, candles/retention, cron jobs.
-2. **Deploy functions**: `supabase functions deploy scrape-psx evaluate-alerts send-push delete-account`
+2. **Deploy functions**: `supabase functions deploy scrape-psx evaluate-alerts send-push delete-account admin-api`
+
+### Admin panel + after-hours alert fix (June 14, 2026)
+
+1. **Run `supabase/admin-setup.sql`** — adds `is_admin`/`restricted` columns, the `app_settings` table (+ seeds the WhatsApp/pause switches), and makes the owner an admin. Edit the email in section 3 if needed.
+2. **Redeploy `evaluate-alerts`** — now self-guards market hours + tick freshness, so it never fires on the frozen closing price after the market closes (this was the 3 AM "THCCL hit support" spam). Also honours the global kill switches and skips restricted users.
+3. **Deploy `admin-api`** — `supabase functions deploy admin-api`.
+4. **Remove the stray cron (optional but recommended)** — run the diagnostic in `admin-setup.sql` §4: `select jobname, schedule, command from cron.job;`. If a job POSTs to `/functions/v1/evaluate-alerts` directly, that's what fired alerts after hours. The function now self-guards so it's harmless, but `select cron.unschedule('<jobname>');` stops the wasted invocations — the `scrape-psx` chain still evaluates alerts on fresh ticks.
 3. **Smoke-test the scraper**: `curl -X POST "https://<project-ref>.supabase.co/functions/v1/scrape-psx?force=true" -H "Authorization: Bearer <service-role-key>"` then check `price_ticks` has fresh rows.
    - **If PSX returns 462** (its firewall blocks Supabase egress IPs): deploy `cloudflare/psx-proxy-worker.js` as a free Cloudflare Worker (instructions in the file header), then set `PSX_PROXY_URL` + `PSX_PROXY_KEY` as Supabase secrets and redeploy `scrape-psx`. The function tries direct first and falls back to the proxy automatically.
 4. **Fonnte**: `supabase secrets set FONNTE_TOKEN=...`, enable WhatsApp on your profile with your number, set a level that's guaranteed to trigger, confirm the message arrives and History shows `sent`.

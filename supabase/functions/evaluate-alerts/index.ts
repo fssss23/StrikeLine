@@ -1,21 +1,113 @@
+// evaluate-alerts — the alert engine. Loads enabled alert_rules, reads the
+// latest FRESH price tick per symbol, and dispatches WhatsApp/push when a
+// level is crossed (respecting per-rule cooldowns).
+//
+// Normally chained by scrape-psx on fresh data, but it also self-guards so it
+// is safe to schedule directly: it will NOT fire when the market is closed or
+// when the latest tick is stale. Pass ?force=true to bypass both guards for
+// manual testing.
+//
+// Global controls live in the `app_settings` table (managed from the admin
+// panel via the admin-api function): `alerts_paused` halts everything and
+// `whatsapp_enabled` is a global WhatsApp kill switch. All reads of the new
+// admin tables/columns are defensive, so this deploys safely before the
+// admin-setup.sql migration is run.
+
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+// A tick older than this is considered stale and never triggers an alert.
+// Active (watched/aletred) symbols tick every minute during market hours, so
+// 15 minutes is comfortably fresh while still catching a scraper stall.
+const FRESH_MINUTES = 15
+
+function pktNow(): Date {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Karachi' }))
+}
+
+// PSX hours (PKT): Mon–Thu 09:15–15:30; Friday trades two sessions around the
+// Jumma break, 09:15–12:00 and 14:30–16:30. A small tail mirrors scrape-psx so
+// the closing tick is still evaluated. Keep this in sync with scrape-psx.
+function isMarketOpen(): boolean {
+  const pkt = pktNow()
+  const day = pkt.getDay()
+  if (day === 0 || day === 6) return false
+  const mins = pkt.getHours() * 60 + pkt.getMinutes()
+  const open = 9 * 60 + 15
+  if (day === 5) {
+    return (mins >= open && mins <= 12 * 60 + 5) ||
+           (mins >= 14 * 60 + 30 && mins <= 16 * 60 + 35)
+  }
+  return mins >= open && mins <= 15 * 60 + 35
+}
 
 Deno.serve(async (req) => {
   try {
+    const force = new URL(req.url).searchParams.get('force') === 'true'
+
+    // GUARD 1 — market hours. This is the fix for after-hours alert spam:
+    // without it, every cooldown lapse re-fires the frozen closing price.
+    if (!force && !isMarketOpen()) {
+      return new Response(
+        JSON.stringify({ status: 'skipped', reason: 'market_closed' }),
+        { headers: { 'Content-Type': 'application/json' } }
+      )
+    }
+
     // 1. Initialization
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
+    // Global controls (defensive — defaults keep alerts flowing if the
+    // app_settings table doesn't exist yet)
+    let alertsPaused = false
+    let whatsappGloballyEnabled = true
+    try {
+      const { data: settings } = await supabase
+        .from('app_settings')
+        .select('key, value')
+        .in('key', ['alerts_paused', 'whatsapp_enabled'])
+      for (const s of settings || []) {
+        if (s.key === 'alerts_paused') alertsPaused = s.value === true
+        if (s.key === 'whatsapp_enabled') whatsappGloballyEnabled = s.value !== false
+      }
+    } catch (_err) {
+      // table missing — keep defaults
+    }
+
+    // GUARD 2 — global pause kill switch (admin panel)
+    if (alertsPaused && !force) {
+      return new Response(
+        JSON.stringify({ status: 'skipped', reason: 'alerts_paused' }),
+        { headers: { 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Restricted users get no alerts at all (defensive: column may not exist yet)
+    const restrictedUsers = new Set<string>()
+    try {
+      const { data: restricted } = await supabase
+        .from('user_profiles')
+        .select('id')
+        .eq('restricted', true)
+      for (const r of restricted || []) restrictedUsers.add(r.id)
+    } catch (_err) {
+      // column missing — treat nobody as restricted
+    }
+
     // 2. Data Fetching
     // Query all rows from alert_rules where at least one level is enabled
-    const { data: alertRules, error: rulesError } = await supabase
+    const { data: alertRulesRaw, error: rulesError } = await supabase
       .from('alert_rules')
       .select('*')
       .or('support_enabled.eq.true,resistance_enabled.eq.true,breakout_enabled.eq.true')
 
     if (rulesError) throw rulesError
-    if (!alertRules || alertRules.length === 0) {
+
+    // Drop rules belonging to restricted users
+    const alertRules = (alertRulesRaw || []).filter(r => !restrictedUsers.has(r.user_id))
+
+    if (alertRules.length === 0) {
       return new Response(JSON.stringify({ status: 'ok', message: 'No active rules' }), {
         headers: { 'Content-Type': 'application/json' }
       })
@@ -24,12 +116,17 @@ Deno.serve(async (req) => {
     // Extract unique symbols to query their latest prices
     const symbols = [...new Set(alertRules.map(r => r.symbol))]
 
-    // Query the single latest price_ticks entry for each symbol
-    // Order by scraped_at descending, then manually take the first one per symbol
+    // GUARD 3 — tick freshness. Only consider ticks scraped recently so a stale
+    // (e.g. closing) price can never trigger an alert even if this function is
+    // somehow invoked off-hours.
+    const freshThreshold = new Date(Date.now() - FRESH_MINUTES * 60 * 1000).toISOString()
+
+    // Query the latest fresh price_ticks per symbol (order desc, first-wins)
     const { data: priceTicks, error: ticksError } = await supabase
       .from('price_ticks')
       .select('*')
       .in('symbol', symbols)
+      .gte('scraped_at', force ? '1970-01-01' : freshThreshold)
       .order('scraped_at', { ascending: false })
 
     if (ticksError) throw ticksError
@@ -54,20 +151,20 @@ Deno.serve(async (req) => {
       // Support: Trigger if actual_price <= level * (1 + buffer_pct / 100)
       if (rule.support_enabled && rule.support_level) {
         if (actualPrice <= rule.support_level * (1 + bufferPct / 100)) {
-          processPromises.push(processAlert(supabase, rule, 'support', actualPrice, rule.support_level))
+          processPromises.push(processAlert(supabase, rule, 'support', actualPrice, rule.support_level, whatsappGloballyEnabled))
         }
       }
 
       // Resistance/Breakout: Trigger if actual_price >= level * (1 - buffer_pct / 100)
       if (rule.resistance_enabled && rule.resistance_level) {
         if (actualPrice >= rule.resistance_level * (1 - bufferPct / 100)) {
-          processPromises.push(processAlert(supabase, rule, 'resistance', actualPrice, rule.resistance_level))
+          processPromises.push(processAlert(supabase, rule, 'resistance', actualPrice, rule.resistance_level, whatsappGloballyEnabled))
         }
       }
 
       if (rule.breakout_enabled && rule.breakout_level) {
         if (actualPrice >= rule.breakout_level * (1 - bufferPct / 100)) {
-          processPromises.push(processAlert(supabase, rule, 'breakout', actualPrice, rule.breakout_level))
+          processPromises.push(processAlert(supabase, rule, 'breakout', actualPrice, rule.breakout_level, whatsappGloballyEnabled))
         }
       }
     }
@@ -91,7 +188,8 @@ async function processAlert(
   rule: any,
   levelType: string,
   actualPrice: number,
-  levelValue: number
+  levelValue: number,
+  whatsappGloballyEnabled: boolean
 ) {
   // 4. Cooldown Check
   // alert_events uses triggered_at (not created_at)
@@ -153,8 +251,9 @@ async function processAlert(
   if (profileError || !profile) {
     console.error('Error fetching user profile:', profileError)
     pushStatus = 'failed'
-  } else if (profile.whatsapp_enabled && profile.whatsapp_number) {
-    // 6. WhatsApp Dispatch via Fonnte
+  } else if (profile.whatsapp_enabled && profile.whatsapp_number && whatsappGloballyEnabled) {
+    // 6. WhatsApp Dispatch via Fonnte (skipped entirely when the admin global
+    // WhatsApp kill switch is off)
     const fonnteToken = Deno.env.get('FONNTE_TOKEN')
     if (!fonnteToken) {
       console.error('FONNTE_TOKEN environment variable is missing')

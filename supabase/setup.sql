@@ -83,6 +83,15 @@ $$;
 -- ============================================================
 -- 4. Cron jobs (requires the pg_cron + pg_net extensions, enabled by
 --    default on Supabase). REPLACE the placeholders before running.
+--
+-- ⚠️ Schedule ONLY the scraper. scrape-psx chains evaluate-alerts on every
+--    successful run, so a SEPARATE evaluate-alerts cron is NOT needed and is
+--    actively harmful: it re-evaluates the frozen closing price after hours and
+--    re-fires the same alert every cooldown (this caused 3 AM WhatsApp spam in
+--    June 2026 via a stray 'alert-engine-cron'). evaluate-alerts now self-guards
+--    market hours + tick freshness, but still don't schedule it directly.
+-- ⚠️ You MUST fill <project-ref> and <service-role-key> — an unfilled job posts
+--    to a bad URL and silently fails every minute.
 -- ============================================================
 -- Scrape every minute — the function self-guards PSX market hours,
 -- so this is safe to leave running 24/7.

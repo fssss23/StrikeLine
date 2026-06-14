@@ -1,16 +1,19 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Bookmark, Clock, Settings } from 'lucide-react';
+import { LayoutDashboard, Bookmark, Clock, Settings, ShieldCheck } from 'lucide-react';
 import { useActiveAlerts } from '../../hooks/useActiveAlerts';
+import { useUserStore } from '../../store/useUserStore';
 import { cn } from '../../lib/utils';
 
 export const MobileNav = () => {
   const activeAlerts = useActiveAlerts();
+  const user = useUserStore(state => state.user);
 
   const navItems = [
     { name: 'Dashboard', path: '/', icon: LayoutDashboard },
     { name: 'Watchlist', path: '/watchlist', icon: Bookmark },
     { name: 'History', path: '/history', icon: Clock, badge: activeAlerts },
     { name: 'Settings', path: '/settings', icon: Settings },
+    ...(user?.is_admin ? [{ name: 'Admin', path: '/admin', icon: ShieldCheck }] : []),
   ];
 
   return (

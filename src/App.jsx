@@ -9,10 +9,18 @@ import DashboardPage from './pages/DashboardPage'
 import AlertHistoryPage from './pages/AlertHistoryPage'
 import WatchlistPage from './pages/WatchlistPage'
 import SettingsPage from './pages/SettingsPage'
+import AdminPage from './pages/AdminPage'
 import { SecurityDrawer } from './components/drawer/SecurityDrawer'
 import { useUserStore } from './store/useUserStore'
 
 // ProtectedRoute removed as logic is handled at the App and Router level.
+
+// Admin-only gate: non-admins are bounced to the dashboard. user (with the
+// merged is_admin profile flag) is always populated once session is truthy.
+function AdminRoute({ children }) {
+  const user = useUserStore(state => state.user)
+  return user?.is_admin ? children : <Navigate to="/" replace />
+}
 
 export default function App() {
   const session = useUserStore(state => state.session)
@@ -60,6 +68,7 @@ export default function App() {
             <Route path="watchlist" element={<WatchlistPage />} />
             <Route path="history" element={<AlertHistoryPage />} />
             <Route path="settings" element={<SettingsPage />} />
+            <Route path="admin" element={<AdminRoute><AdminPage /></AdminRoute>} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

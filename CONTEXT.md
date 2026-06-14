@@ -155,8 +155,19 @@ user_profiles (
   email_alerts_enabled  bool DEFAULT false,
   timezone              text DEFAULT 'Asia/Karachi',
   cooldown_minutes      int  DEFAULT 240,
-  buffer_pct            float DEFAULT 0.5
+  buffer_pct            float DEFAULT 0.5,
+  is_admin              bool DEFAULT false,   -- can open /admin + call admin-api
+  restricted            bool DEFAULT false    -- locked out of app; alerts skipped
 )
+
+app_settings (                    -- global flags, written ONLY by admin-api (service role)
+  key         text PK,            -- 'whatsapp_enabled' | 'alerts_paused'
+  value       jsonb,              -- boolean
+  updated_at  timestamptz
+)
+-- RLS enabled with NO policies → invisible to clients; service-role functions
+-- (evaluate-alerts reads, admin-api writes) bypass RLS. Seeded by
+-- supabase/admin-setup.sql.
 ```
 
 ### ⚠️ Critical schema gotchas (these caused real production bugs)
@@ -190,10 +201,16 @@ user_profiles (
 
 ### 5.2 `evaluate-alerts` — the alert engine
 
-Runs after each scrape (chained) or on its own schedule.
+Runs after each scrape (chained) or on its own schedule. **Self-guards** so it is safe to invoke any time:
 
-1. Loads all `alert_rules` with at least one level enabled
-2. Loads the **latest tick per symbol** (order by `scraped_at` desc, first-wins map)
+- **Market-hours guard** (mirrors `scrape-psx`'s `isMarketOpen()`): returns `skipped/market_closed` outside PSX hours. *This is the fix for the after-hours WhatsApp spam* — previously a standalone `evaluate-alerts` cron kept re-evaluating the frozen closing price, re-firing the same alert every time the 4h cooldown lapsed (3 AM "THCCL hit support" messages).
+- **Tick-freshness guard**: only considers ticks scraped within the last `FRESH_MINUTES` (15). A stale price can never trigger an alert even if the function is somehow called off-hours or the scraper stalls.
+- **Global kill switches** (from `app_settings`, read defensively): `alerts_paused` halts everything; `whatsapp_enabled=false` skips WhatsApp dispatch globally (push/in-app unaffected). Toggled from the admin panel.
+- **Restricted users** (`user_profiles.restricted`) are filtered out before evaluation — no events, no alerts.
+- `?force=true` bypasses the market-hours + freshness guards (and the pause switch) for manual testing.
+
+1. Loads all `alert_rules` with at least one level enabled (minus restricted users)
+2. Loads the **latest fresh tick per symbol** (order by `scraped_at` desc, first-wins map)
 3. Trigger conditions (buffer makes alerts fire as price *approaches* the level):
    - **Support**: `price <= support_level * (1 + buffer_pct/100)`
    - **Resistance**: `price >= resistance_level * (1 - buffer_pct/100)`
@@ -224,7 +241,17 @@ PSX's firewall returns **HTTP 462** to AWS and most US-datacenter IPs — that k
 
 Secrets summary (all set): `FONNTE_TOKEN`, `FIREBASE_SERVICE_ACCOUNT`, `PSX_PROXY_URL`, `PSX_PROXY_KEY` (Supabase) · `PROXY_KEY` (Cloudflare worker).
 
-Deploy: `npx supabase functions deploy scrape-psx evaluate-alerts send-push delete-account --project-ref <ref> --use-api`
+### 5.6 `admin-api` — privileged backend for the admin panel
+
+Single action-routed function (service role). Verifies the caller's JWT, checks `user_profiles.is_admin`, and 403s non-admins. It's the **only** way the frontend can read user emails (they live in `auth.users`, never exposed to clients) and write `app_settings` (RLS-locked). Actions (`POST { action, ... }`):
+
+- `overview` — stats (users/admins/restricted, active levels, watchlist items, alerts today + sent/failed), scraper health (last scrape time, ticks in last run, market-open, server PKT), and current global settings
+- `list_users` — every user merged from `auth.admin.listUsers()` + `user_profiles` + per-user watchlist/level counts and last alert
+- `set_user_flag` — `{ user_id, field: 'restricted'|'is_admin', value }` (cannot change your own flags — anti-lockout)
+- `set_setting` — `{ key: 'whatsapp_enabled'|'alerts_paused', value }` (the global kill switches)
+- `recent_events` — last 50 `alert_events` across all users, with email
+
+Deploy: `npx supabase functions deploy scrape-psx evaluate-alerts send-push delete-account admin-api --project-ref <ref> --use-api`
 
 ---
 
@@ -266,9 +293,16 @@ hooks/
     useCandlestickQuery.js   price_ticks → OHLC buckets per timeframe
     useLastTriggeredQuery.js latest alert_event per level type for one symbol
                              (feeds the real "Last triggered: X ago" rows)
+    useAdminQuery.js         admin-api calls (overview/users/events queries +
+                             set_user_flag / set_setting mutations)
 
 components/
-  layout/      AppShell (auth guard, realtime, page titles), Sidebar, TopBar, MobileNav
+  layout/      AppShell (auth guard, realtime, page titles, restricted-account
+               lockout screen), Sidebar, TopBar, MobileNav (Admin link shown only
+               when user.is_admin)
+  admin/       AdminStats (stat cards + scraper-health), AdminControls (global
+               WhatsApp + pause kill switches), AdminUsersTable (search, restrict,
+               grant admin), AdminRecentEvents
   search/      SearchBar (debounced ilike query), SearchDropdown
   watchlist/   WatchlistTable (skeleton/error/empty), WatchlistRow (React.memo,
                shows "% above/below nearest level", amber when within 1%), AlertLevelBadge
@@ -283,6 +317,7 @@ components/
 
 pages/
   LoginPage    DashboardPage    WatchlistPage    AlertHistoryPage    SettingsPage
+  AdminPage    (admin-only, gated by <AdminRoute> + user.is_admin)
 ```
 
 ### 6.2 State management split (important)
@@ -311,7 +346,8 @@ pages/
   ├─ index    DashboardPage   (search, summary cards, watchlist)
   ├─ watchlist WatchlistPage  (full watchlist + search)
   ├─ history  AlertHistoryPage (filterable event log + CSV export)
-  └─ settings SettingsPage    (channels, defaults, account)
+  ├─ settings SettingsPage    (channels, defaults, account)
+  └─ admin    AdminPage       (admin-only via <AdminRoute>; non-admins → /)
 *             redirect to /
 ```
 

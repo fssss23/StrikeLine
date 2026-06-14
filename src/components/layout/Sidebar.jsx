@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Bookmark, Clock, Settings, LogOut } from 'lucide-react';
+import { LayoutDashboard, Bookmark, Clock, Settings, LogOut, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { StrikeLineLogo } from '../logo/StrikeLineLogo';
 import { useActiveAlerts } from '../../hooks/useActiveAlerts';
@@ -26,6 +26,7 @@ export const Sidebar = ({ className }) => {
     { name: 'Watchlist', path: '/watchlist', icon: Bookmark },
     { name: 'History', path: '/history', icon: Clock, badge: activeAlerts },
     { name: 'Settings', path: '/settings', icon: Settings },
+    ...(user?.is_admin ? [{ name: 'Admin', path: '/admin', icon: ShieldCheck }] : []),
   ];
 
   const displayName = user?.display_name || user?.email?.split('@')[0] || 'User';
