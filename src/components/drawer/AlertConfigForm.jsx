@@ -3,7 +3,6 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
 import { useQueryClient } from '@tanstack/react-query'
-import { AnimatePresence, motion } from 'framer-motion'
 import { Info, TrendingDown, TrendingUp, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '../../lib/supabase'
@@ -20,8 +19,6 @@ const alertSchema = z.object({
   supportEnabled: z.boolean(),
   resistanceEnabled: z.boolean(),
   breakoutEnabled: z.boolean(),
-  bufferPct: z.number().min(0).max(2),
-  cooldownMinutes: z.number().min(30).max(1440),
 }).superRefine((data, ctx) => {
   const checkLevel = (val, fieldName) => {
     if (val && (isNaN(parseFloat(val)) || parseFloat(val) <= 0 || parseFloat(val) >= 100000)) {
@@ -51,7 +48,6 @@ export function AlertConfigForm() {
   const { data: lastTriggered } = useLastTriggered(security?.symbol)
   const updateMutation = useUpdateAlertRule()
   const queryClient = useQueryClient()
-  const [showAdvanced, setShowAdvanced] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
 
   const { register, handleSubmit, watch, setValue, reset, formState: { errors } } = useForm({
@@ -63,8 +59,6 @@ export function AlertConfigForm() {
       supportEnabled: false,
       resistanceEnabled: false,
       breakoutEnabled: false,
-      bufferPct: 0.5,
-      cooldownMinutes: 240,
     }
   })
 
@@ -79,19 +73,8 @@ export function AlertConfigForm() {
       supportEnabled: rule?.support_enabled ?? false,
       resistanceEnabled: rule?.resistance_enabled ?? false,
       breakoutEnabled: rule?.breakout_enabled ?? false,
-      bufferPct: rule?.buffer_pct ?? 0.5,
-      cooldownMinutes: rule?.cooldown_minutes ?? 240,
     })
   }, [security?.symbol, security?.alert_rule, reset])
-
-  const bufferPct = watch('bufferPct')
-  const cooldownMinutes = watch('cooldownMinutes')
-
-  const formatCooldown = (mins) => {
-    if (mins < 60) return `${mins} minutes`
-    const hrs = mins / 60
-    return `${hrs} hour${hrs > 1 ? 's' : ''}`
-  }
 
   const onSubmit = async (data) => {
     setIsSaving(true)
@@ -104,8 +87,6 @@ export function AlertConfigForm() {
         resistance_enabled: data.resistanceEnabled,
         breakout_level: data.breakoutEnabled && data.breakoutLevel ? parseFloat(data.breakoutLevel) : null,
         breakout_enabled: data.breakoutEnabled,
-        buffer_pct: data.bufferPct,
-        cooldown_minutes: data.cooldownMinutes,
       })
       queryClient.invalidateQueries({ queryKey: ['drawer-security', security.symbol] })
     } catch (_err) {
@@ -146,7 +127,7 @@ export function AlertConfigForm() {
         <div className="relative group cursor-help text-text-secondary">
           <Info size={16} />
           <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-3 bg-slate-900 text-white text-xs rounded-[8px] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all shadow-xl z-50 pointer-events-none">
-            You'll be notified when the live price touches or crosses any enabled level, within your configured buffer.
+            You'll get a heads-up when the live price comes within 1% of an enabled level, and again the moment it actually crosses it.
             <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-slate-900 rotate-45" />
           </div>
         </div>
@@ -184,52 +165,9 @@ export function AlertConfigForm() {
         )}
       </div>
 
-      <button
-        type="button"
-        onClick={() => setShowAdvanced(!showAdvanced)}
-        className="text-[13px] text-brand-blue font-medium hover:underline flex items-center mb-4"
-      >
-        Advanced Settings {showAdvanced ? '▴' : '▾'}
-      </button>
-
-      <AnimatePresence>
-        {showAdvanced && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden flex flex-col gap-6"
-          >
-            <div>
-              <div className="flex justify-between mb-1">
-                <span className="text-[14px] font-semibold text-text-primary">Notification Buffer</span>
-                <span className="text-[14px] font-bold text-brand-navy">{bufferPct.toFixed(1)}%</span>
-              </div>
-              <input
-                type="range" min="0" max="2" step="0.1"
-                {...register('bufferPct', { valueAsNumber: true })}
-                className="w-full h-1.5 bg-surface-border rounded-lg appearance-none cursor-pointer custom-slider"
-                style={{ backgroundSize: `${(bufferPct / 2) * 100}% 100%` }}
-              />
-              <p className="text-[12px] text-text-secondary mt-1">Alert fires within ±{bufferPct.toFixed(1)}% of target level</p>
-            </div>
-
-            <div>
-              <div className="flex justify-between mb-1">
-                <span className="text-[14px] font-semibold text-text-primary">Cooldown Period</span>
-                <span className="text-[14px] font-bold text-brand-navy">{formatCooldown(cooldownMinutes)}</span>
-              </div>
-              <input
-                type="range" min="30" max="1440" step="30"
-                {...register('cooldownMinutes', { valueAsNumber: true })}
-                className="w-full h-1.5 bg-surface-border rounded-lg appearance-none cursor-pointer custom-slider"
-                style={{ backgroundSize: `${((cooldownMinutes - 30) / 1410) * 100}% 100%` }}
-              />
-              <p className="text-[12px] text-text-secondary mt-1">{formatCooldown(cooldownMinutes)} between repeat alerts on the same level</p>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <p className="text-[12px] text-text-secondary bg-surface-page border border-surface-border rounded-[8px] px-3 py-2 mb-4">
+        Alerts fire within <span className="font-semibold text-text-primary">1%</span> of a level, and again the moment it's actually hit. Repeat heads-ups are spaced at least <span className="font-semibold text-text-primary">90 minutes</span> apart.
+      </p>
 
       <div className="flex flex-col gap-3 mt-6">
         <Button

@@ -94,6 +94,7 @@ interface Tick {
   change_abs: number | null
   change_pct: number | null
   company_name?: string | null // parsed for auto-discovery; never inserted into price_ticks
+  sector?: string | null       // parsed for securities (discovery + backfill); never in price_ticks
 }
 
 // Fallback parser for the server-rendered market-watch HTML table.
@@ -106,9 +107,11 @@ function parseHtmlTable(html: string): Tick[] {
     const symbol = cells[0].toUpperCase()
     if (!symbol || !/^[A-Z0-9.]+$/.test(symbol)) continue
     const companyName = rowMatch[1].match(/data-title="([^"]+)"/)?.[1]?.replace(/&amp;/g, '&') ?? null
+    const sector = cells[1] && cells[1] !== '-' ? cells[1] : null // column 2 = SECTOR
     rows.push({
       symbol,
       company_name: companyName,
+      sector,
       open_price: parseNumber(cells[4]),
       high_price: parseNumber(cells[5]),
       low_price: parseNumber(cells[6]),
@@ -125,6 +128,7 @@ function normalizeJsonRow(row: any): Tick {
   return {
     symbol: String(row.symbol ?? row.SYMBOL ?? '').toUpperCase(),
     company_name: row.name ?? row.NAME ?? null,
+    sector: row.sector ?? row.SECTOR ?? row.sectorName ?? null,
     // IMPORTANT: prefer the live price; LDCP is *yesterday's* close and only a last resort
     last_price: parseNumber(row.last ?? row.current ?? row.LAST ?? row.CURRENT ?? row.price ?? row.ldcp ?? row.LDCP),
     open_price: parseNumber(row.open ?? row.OPEN),
@@ -233,12 +237,12 @@ Deno.serve(async (req: Request) => {
     for (const r of arRes.data || []) activeSymbols.add(r.symbol)
 
     // Auto-discovery (snapshot runs): any symbol PSX lists that we don't
-    // know yet gets added to securities, so new listings appear in search
+    // know yet gets added to securities, so new listings appear in search.
     let discovered = 0
     if (snapshot) {
       const newSecurities = rawData
         .filter(t => !trackedSymbols.has(t.symbol) && t.company_name)
-        .map(t => ({ symbol: t.symbol, company_name: t.company_name, sector: null }))
+        .map(t => ({ symbol: t.symbol, company_name: t.company_name, sector: t.sector ?? null }))
       if (newSecurities.length > 0) {
         const { error: discError } = await supabase
           .from('securities')
@@ -250,6 +254,23 @@ Deno.serve(async (req: Request) => {
           for (const s of newSecurities) trackedSymbols.add(s.symbol)
         }
       }
+
+      // Sector backfill (snapshot runs): the market-watch table carries a SECTOR
+      // column that the original seed never captured, so most securities have a
+      // null sector (shown as "—" in the UI). Upsert {symbol, sector} for every
+      // tracked row that has one — ON CONFLICT only the sector column is touched,
+      // so company_name is preserved.
+      const sectorRows = rawData
+        .filter(t => trackedSymbols.has(t.symbol) && t.sector)
+        .map(t => ({ symbol: t.symbol, sector: t.sector }))
+      if (sectorRows.length > 0) {
+        const { error: sectorError } = await supabase
+          .from('securities')
+          .upsert(sectorRows, { onConflict: 'symbol' })
+        if (sectorError) {
+          console.error('Sector backfill failed (non-fatal):', sectorError.message)
+        }
+      }
     }
 
     const scrapedAt = new Date().toISOString()
@@ -257,7 +278,7 @@ Deno.serve(async (req: Request) => {
       .filter(t => trackedSymbols.has(t.symbol))
       .filter(t => snapshot || activeSymbols.has(t.symbol))
       .filter(t => t.last_price != null && t.last_price > 0 && t.last_price < 1000000)
-      .map(({ company_name: _name, ...t }) => ({ ...t, scraped_at: scrapedAt }))
+      .map(({ company_name: _name, sector: _sector, ...t }) => ({ ...t, scraped_at: scrapedAt }))
 
     // Index tick — only if KSE100 is seeded in securities (FK on price_ticks.symbol)
     if (trackedSymbols.has('KSE100')) {

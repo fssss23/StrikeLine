@@ -1,45 +1,64 @@
 import React from 'react';
-import { 
-  ComposedChart, Bar, XAxis, YAxis, Tooltip, ReferenceLine, ResponsiveContainer, Cell 
+import {
+  ComposedChart, Bar, XAxis, YAxis, Tooltip, ReferenceLine, ResponsiveContainer, Customized
 } from 'recharts';
 import { useDrawer } from '../../hooks/useDrawer';
 import { useCandlestickQuery } from '../../hooks/queries/useCandlestickQuery';
 
-const CandlestickBar = (props) => {
-  const { x, y, width, height, payload, yAxis } = props;
-  const { open, close, high, low } = payload;
-  
-  if (!yAxis) return null; // Wait for yAxis scale
-  const scaleY = yAxis.scale;
+// Candlestick layer rendered via <Customized>, which receives the chart's
+// internal state (xAxisMap / yAxisMap) — the real axis scales. The previous
+// approach relied on `props.yAxis` inside a custom <Bar> shape, but Recharts
+// strips non-SVG props before cloning the shape, so the scale was always
+// undefined and NO candles ever rendered. Reading the scales here is reliable.
+const CandlesticksLayer = ({ xAxisMap, yAxisMap, bars }) => {
+  if (!xAxisMap || !yAxisMap || !bars || bars.length === 0) return null;
 
-  const isUp = close >= open;
-  const color = isUp ? '#16A34A' : '#DC2626';
-  
-  // Calculate pixel positions using the chart's yAxis scale
-  const topY = scaleY(Math.max(open, close));
-  const bottomY = scaleY(Math.min(open, close));
-  const highY = scaleY(high);
-  const lowY = scaleY(low);
-  
-  const bodyHeight = Math.max(Math.abs(bottomY - topY), 1);
-  const center = x + width / 2;
-  
+  const xAxis = xAxisMap[Object.keys(xAxisMap)[0]];
+  const yAxis = yAxisMap[Object.keys(yAxisMap)[0]];
+  const xScale = xAxis?.scale;
+  const yScale = yAxis?.scale;
+  if (!xScale || !yScale) return null;
+
+  // A band scale exists because a (transparent) <Bar> is present.
+  const band = xScale.bandwidth ? xScale.bandwidth() : 8;
+  const bodyW = Math.max(Math.min(band * 0.6, 16), 2);
+
   return (
     <g>
-      {/* Wick - top */}
-      <line x1={center} y1={highY} x2={center} y2={topY} stroke={color} strokeWidth={1} />
-      {/* Body */}
-      <rect 
-        x={x} 
-        y={topY} 
-        width={width} 
-        height={bodyHeight}
-        fill={isUp ? '#F0FDF4' : '#FEF2F2'} 
-        stroke={color} 
-        strokeWidth={1} 
-      />
-      {/* Wick - bottom */}
-      <line x1={center} y1={bottomY} x2={center} y2={lowY} stroke={color} strokeWidth={1} />
+      {bars.map((d, i) => {
+        const xLeft = xScale(d.time);
+        if (xLeft == null) return null;
+        const center = xLeft + band / 2;
+
+        const isUp = d.close >= d.open;
+        const color = isUp ? '#16A34A' : '#DC2626';
+        const fill = isUp ? '#F0FDF4' : '#FEF2F2';
+
+        const topY = yScale(Math.max(d.open, d.close));
+        const bottomY = yScale(Math.min(d.open, d.close));
+        const highY = yScale(d.high);
+        const lowY = yScale(d.low);
+        const bodyHeight = Math.max(Math.abs(bottomY - topY), 1);
+
+        return (
+          <g key={`candle-${i}`}>
+            {/* Upper wick */}
+            <line x1={center} y1={highY} x2={center} y2={topY} stroke={color} strokeWidth={1} />
+            {/* Body */}
+            <rect
+              x={center - bodyW / 2}
+              y={topY}
+              width={bodyW}
+              height={bodyHeight}
+              fill={fill}
+              stroke={color}
+              strokeWidth={1}
+            />
+            {/* Lower wick */}
+            <line x1={center} y1={bottomY} x2={center} y2={lowY} stroke={color} strokeWidth={1} />
+          </g>
+        );
+      })}
     </g>
   );
 };
@@ -149,11 +168,11 @@ export function CandlestickChart({ activeTimeframe }) {
             cursor={{ stroke: '#E2E8F0', strokeWidth: 1, strokeDasharray: '4 4' }}
           />
           
-          <Bar dataKey="close" shape={<CandlestickBar />} isAnimationActive={false}>
-            {data.map((entry, index) => (
-              <Cell key={`cell-${index}`} />
-            ))}
-          </Bar>
+          {/* Transparent bars establish the category band scale + drive the
+              tooltip; the visible candles are drawn by the Customized layer. */}
+          <Bar dataKey="close" fill="transparent" isAnimationActive={false} />
+          <Customized component={(props) => <CandlesticksLayer {...props} bars={data} />} />
+
 
           {supportLevel != null && (
             <ReferenceLine

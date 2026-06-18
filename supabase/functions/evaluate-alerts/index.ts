@@ -1,6 +1,15 @@
 // evaluate-alerts — the alert engine. Loads enabled alert_rules, reads the
-// latest FRESH price tick per symbol, and dispatches WhatsApp/push when a
-// level is crossed (respecting per-rule cooldowns).
+// latest TWO fresh price ticks per symbol, and dispatches WhatsApp/push the
+// moment a level is *crossed* — i.e. the price moves from one side of the
+// level (± a fixed 1% buffer) to the other between consecutive ticks.
+//
+// Edge-triggered, not level-triggered: a price that merely *sits* below
+// support (or above resistance) no longer re-fires every cooldown. This is the
+// fix for the 09:15 open burst + the ~4h repeats — on the first tick of the
+// session there is no prior fresh tick, so nothing crosses and nothing fires.
+//
+// Buffer (1%) and cooldown (90 min) are FIXED product-wide here; the old
+// per-user / per-rule buffer_pct & cooldown_minutes columns are ignored.
 //
 // Normally chained by scrape-psx on fresh data, but it also self-guards so it
 // is safe to schedule directly: it will NOT fire when the market is closed or
@@ -16,9 +25,18 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 // A tick older than this is considered stale and never triggers an alert.
-// Active (watched/aletred) symbols tick every minute during market hours, so
-// 15 minutes is comfortably fresh while still catching a scraper stall.
+// Active (watched/alerted) symbols tick every minute during market hours, so
+// 15 minutes is comfortably fresh while still catching a scraper stall. It also
+// gates the *previous* tick used for crossing detection: after a gap (overnight
+// or a scraper stall) there is no fresh prior tick, so no false crossing fires.
 const FRESH_MINUTES = 15
+
+// Fixed alert behaviour (previously per-user/per-rule, now product-wide).
+// BUFFER_PCT: an alert fires when the price comes within 1% of the level.
+// COOLDOWN_MINUTES: the same user+symbol+level can't re-alert within 90 min
+// (a debounce against the price wiggling right across the threshold).
+const BUFFER_PCT = 1
+const COOLDOWN_MINUTES = 90
 
 function pktNow(): Date {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Karachi' }))
@@ -131,40 +149,68 @@ Deno.serve(async (req) => {
 
     if (ticksError) throw ticksError
 
-    const latestPriceMap = new Map()
+    // Keep the latest TWO fresh ticks per symbol (ordered desc → [current, previous]).
+    // Crossing detection needs the prior price; one tick alone never fires.
+    const ticksBySymbol = new Map<string, any[]>()
     for (const tick of priceTicks || []) {
-      if (!latestPriceMap.has(tick.symbol)) {
-        latestPriceMap.set(tick.symbol, tick)
+      const arr = ticksBySymbol.get(tick.symbol)
+      if (arr) {
+        if (arr.length < 2) arr.push(tick)
+      } else {
+        ticksBySymbol.set(tick.symbol, [tick])
       }
     }
 
     const processPromises = []
 
-    // 3. Evaluation Logic
+    // 3. Evaluation Logic — edge-triggered (crossing). TWO tiers per level:
+    //   • 'hit'      — price crosses the EXACT level. Always fires, even inside
+    //                  the cooldown: the real event must never be swallowed by a
+    //                  buffer/approach alert that fired moments earlier.
+    //   • 'approach' — price crosses into the 1% buffer band around the level.
+    //                  A softer heads-up, gated by the 90-min cooldown.
+    // When a single tick clears both (price jumps straight past the level), only
+    // the 'hit' fires.
     for (const rule of alertRules) {
-      const priceTick = latestPriceMap.get(rule.symbol)
-      if (!priceTick) continue
+      const ticks = ticksBySymbol.get(rule.symbol)
+      // Need two fresh ticks to know the price actually *crossed* (vs. opening
+      // the session already on the wrong side — the old 09:15 burst).
+      if (!ticks || ticks.length < 2) continue
 
-      const actualPrice = priceTick.last_price
-      const bufferPct = rule.buffer_pct || 0
+      const curr = ticks[0].last_price
+      const prev = ticks[1].last_price
+      if (curr == null || prev == null) continue
 
-      // Support: Trigger if actual_price <= level * (1 + buffer_pct / 100)
+      // Support: price falling toward the level from above
       if (rule.support_enabled && rule.support_level) {
-        if (actualPrice <= rule.support_level * (1 + bufferPct / 100)) {
-          processPromises.push(processAlert(supabase, rule, 'support', actualPrice, rule.support_level, whatsappGloballyEnabled))
+        const exact = rule.support_level
+        const band = exact * (1 + BUFFER_PCT / 100)
+        if (prev > exact && curr <= exact) {
+          processPromises.push(processAlert(supabase, rule, 'support', 'hit', curr, exact, whatsappGloballyEnabled))
+        } else if (prev > band && curr <= band) {
+          processPromises.push(processAlert(supabase, rule, 'support', 'approach', curr, exact, whatsappGloballyEnabled))
         }
       }
 
-      // Resistance/Breakout: Trigger if actual_price >= level * (1 - buffer_pct / 100)
+      // Resistance: price rising toward the level from below
       if (rule.resistance_enabled && rule.resistance_level) {
-        if (actualPrice >= rule.resistance_level * (1 - bufferPct / 100)) {
-          processPromises.push(processAlert(supabase, rule, 'resistance', actualPrice, rule.resistance_level, whatsappGloballyEnabled))
+        const exact = rule.resistance_level
+        const band = exact * (1 - BUFFER_PCT / 100)
+        if (prev < exact && curr >= exact) {
+          processPromises.push(processAlert(supabase, rule, 'resistance', 'hit', curr, exact, whatsappGloballyEnabled))
+        } else if (prev < band && curr >= band) {
+          processPromises.push(processAlert(supabase, rule, 'resistance', 'approach', curr, exact, whatsappGloballyEnabled))
         }
       }
 
+      // Breakout: price rising through the breakout level from below
       if (rule.breakout_enabled && rule.breakout_level) {
-        if (actualPrice >= rule.breakout_level * (1 - bufferPct / 100)) {
-          processPromises.push(processAlert(supabase, rule, 'breakout', actualPrice, rule.breakout_level, whatsappGloballyEnabled))
+        const exact = rule.breakout_level
+        const band = exact * (1 - BUFFER_PCT / 100)
+        if (prev < exact && curr >= exact) {
+          processPromises.push(processAlert(supabase, rule, 'breakout', 'hit', curr, exact, whatsappGloballyEnabled))
+        } else if (prev < band && curr >= band) {
+          processPromises.push(processAlert(supabase, rule, 'breakout', 'approach', curr, exact, whatsappGloballyEnabled))
         }
       }
     }
@@ -187,33 +233,43 @@ async function processAlert(
   supabase: any,
   rule: any,
   levelType: string,
+  kind: 'hit' | 'approach',
   actualPrice: number,
   levelValue: number,
   whatsappGloballyEnabled: boolean
 ) {
-  // 4. Cooldown Check
-  // alert_events uses triggered_at (not created_at)
-  const cooldownMs = (rule.cooldown_minutes || 0) * 60 * 1000
+  // 4. Cooldown Check — fixed 90-min debounce (alert_events uses triggered_at).
+  // Applies to BOTH tiers, but kind-aware so the buffer never suppresses the
+  // real hit:
+  //   • a 'hit' is blocked ONLY by a recent *hit* — this stops the price
+  //     oscillating right around the exact level (the 70.00 / 69.92 wiggle) from
+  //     re-spamming, while still letting a hit through after a mere approach.
+  //   • an 'approach' is blocked by ANY recent event for the level.
+  // Past rows carry no explicit kind, so reconstruct it from actual_price vs
+  // level_value (a hit landed on/through the level; an approach stopped short).
+  const cooldownMs = COOLDOWN_MINUTES * 60 * 1000
   const cooldownThreshold = new Date(Date.now() - cooldownMs).toISOString()
 
   const { data: recentEvents, error: recentError } = await supabase
     .from('alert_events')
-    .select('id')
+    .select('actual_price, level_value')
     .eq('user_id', rule.user_id)
     .eq('symbol', rule.symbol)
     .eq('level_type', levelType)
     .gte('triggered_at', cooldownThreshold)
-    .limit(1)
 
   if (recentError) {
     console.error('Error checking cooldown:', recentError)
     return
   }
 
-  // Skip if a recent event exists within the cooldown period
-  if (recentEvents && recentEvents.length > 0) {
-    return
-  }
+  const wasHit = (ev: any) =>
+    levelType === 'support'
+      ? ev.actual_price <= ev.level_value   // fell onto/below support
+      : ev.actual_price >= ev.level_value   // rose onto/above resistance/breakout
+
+  const blocked = (recentEvents || []).some(ev => (kind === 'hit' ? wasHit(ev) : true))
+  if (blocked) return
 
   // 5. Execution
   // Insert a log into alert_events — schema columns are
@@ -259,7 +315,8 @@ async function processAlert(
       console.error('FONNTE_TOKEN environment variable is missing')
       pushStatus = 'failed'
     } else {
-      const formattedText = `⚡ StrikeLine Alert\n${rule.symbol} hit your ${levelType} level\nPrice: PKR ${actualPrice}\nLevel: PKR ${levelValue}`
+      const action = kind === 'hit' ? `hit your ${levelType} level` : `is approaching your ${levelType} level`
+      const formattedText = `⚡ StrikeLine Alert\n${rule.symbol} ${action}\nPrice: PKR ${actualPrice}\nLevel: PKR ${levelValue}`
 
       try {
         // Fonnte expects the raw token in Authorization (no "Bearer" prefix)
@@ -305,9 +362,9 @@ async function processAlert(
         },
         body: JSON.stringify({
           user_id: rule.user_id,
-          title: `⚡ ${rule.symbol} hit your ${levelType} level`,
+          title: `⚡ ${rule.symbol} ${kind === 'hit' ? `hit your ${levelType} level` : `is approaching your ${levelType} level`}`,
           body: `Price: PKR ${actualPrice} · Level: PKR ${levelValue}`,
-          data: { symbol: rule.symbol, level_type: levelType }
+          data: { symbol: rule.symbol, level_type: levelType, kind }
         })
       })
       const pushResult = await pushRes.json()

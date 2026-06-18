@@ -33,9 +33,7 @@ export default function SettingsPage() {
           whatsapp_enabled: localUser.whatsapp_enabled,
           whatsapp_number: localUser.whatsapp_number,
           email_alerts_enabled: localUser.email_alerts_enabled,
-          timezone: localUser.timezone,
-          cooldown_minutes: localUser.cooldown_minutes,
-          buffer_pct: localUser.buffer_pct
+          timezone: localUser.timezone
         })
         .eq('id', session.user.id);
 
@@ -73,7 +71,7 @@ export default function SettingsPage() {
         {/* Left Column - Forms */}
         <div className="flex flex-col relative pb-24 lg:pb-0">
           <NotificationChannels user={localUser} onChange={(updates) => { setLocalUser({...localUser, ...updates}); setDirty(true); }} />
-          <AlertDefaults user={localUser} onChange={(updates) => { setLocalUser({...localUser, ...updates}); setDirty(true); }} />
+          <AlertDefaults />
           <AccountSection user={localUser} onChange={(updates) => { setLocalUser({...localUser, ...updates}); setDirty(true); }} />
 
           {/* Sticky Save Bar */}
@@ -130,10 +128,10 @@ export default function SettingsPage() {
               <div className="w-6 h-6 rounded-full bg-[#EFF6FF] text-[#3B82F6] flex items-center justify-center shrink-0">
                 <Info size={14} />
               </div>
-              <h4 className="text-[14px] font-bold text-text-primary">3. Limits & Cooldowns</h4>
+              <h4 className="text-[14px] font-bold text-text-primary">3. Alert Behaviour</h4>
             </div>
             <p className="text-[13px] text-text-secondary ml-8">
-              The cooldown period prevents alert spam. The buffer helps catch prices that approach but don't exactly hit your level.
+              Alerts fire within 1% of a level (a heads-up) and again the moment it's actually hit. Repeat heads-ups are spaced at least 90 minutes apart.
             </p>
           </div>
 
