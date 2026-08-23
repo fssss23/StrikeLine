@@ -1,12 +1,12 @@
 import React from 'react';
 import { cn } from '../../lib/utils';
 
-export const Toggle = React.forwardRef(({ 
-  checked, 
-  onChange, 
+export const Toggle = React.forwardRef(({
+  checked,
+  onChange,
   className,
   disabled,
-  ...props 
+  ...props
 }, ref) => {
   return (
     <button
@@ -16,8 +16,13 @@ export const Toggle = React.forwardRef(({
       disabled={disabled}
       onClick={() => onChange && onChange(!checked)}
       className={cn(
-        "relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-150 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
-        checked ? "bg-brand-navy" : "bg-[#CBD5E1]",
+        'relative inline-flex h-[26px] w-[46px] shrink-0 cursor-pointer items-center rounded-full',
+        'tap-none transition-all duration-250 ease-swift',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue/40 focus-visible:ring-offset-2',
+        'disabled:cursor-not-allowed disabled:opacity-50',
+        checked
+          ? 'bg-navy-gradient shadow-[inset_0_1px_2px_rgba(0,0,0,0.2)]'
+          : 'bg-slate-200 shadow-[inset_0_1px_2px_rgba(15,23,42,0.10)]',
         className
       )}
       ref={ref}
@@ -25,8 +30,9 @@ export const Toggle = React.forwardRef(({
     >
       <span
         className={cn(
-          "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-surface-card shadow-sm transition duration-150 ease-in-out",
-          checked ? "translate-x-5" : "translate-x-0"
+          'pointer-events-none inline-block h-[22px] w-[22px] transform rounded-full bg-white',
+          'shadow-[0_1px_3px_rgba(15,23,42,0.25)] transition-transform duration-250 ease-spring',
+          checked ? 'translate-x-[22px]' : 'translate-x-[2px]'
         )}
       />
     </button>

@@ -92,8 +92,8 @@ const CustomTooltip = ({ active, payload }) => {
     const changeColor = isUp ? 'text-signal-green' : 'text-signal-red';
 
     return (
-      <div className="bg-white shadow-card rounded-[12px] p-3 border border-surface-border min-w-[160px]">
-        <div className="text-[12px] text-text-secondary mb-1">Time: {data.time}</div>
+      <div className="bg-surface-card shadow-lifted rounded-[12px] p-3 border border-surface-hairline min-w-[168px]">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-text-tertiary mb-1.5">{data.time}</div>
         <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[13px] tabular-nums">
           <div><span className="text-text-secondary">O:</span> <span className="font-medium text-text-primary">{data.open.toFixed(2)}</span></div>
           <div><span className="text-text-secondary">H:</span> <span className="font-medium text-text-primary">{data.high.toFixed(2)}</span></div>
@@ -105,7 +105,7 @@ const CustomTooltip = ({ active, payload }) => {
             </span>
           </div>
         </div>
-        <div className="text-[12px] text-text-secondary mt-1">
+        <div className="text-[11.5px] text-text-tertiary mt-1.5 pt-1.5 border-t border-surface-hairline">
           Vol: {(data.volume / 1000).toFixed(1)}K
         </div>
       </div>
@@ -126,17 +126,20 @@ export function CandlestickChart({ activeTimeframe }) {
 
   if (isLoading) {
     return (
-      <div className="w-full h-[220px] flex flex-col items-center justify-center bg-surface-card rounded-[12px] border border-surface-border">
-        <div className="w-6 h-6 border-2 border-brand-navy border-t-transparent rounded-full animate-spin mb-3"></div>
-        <div className="text-xs font-medium text-text-secondary">Loading market data...</div>
+      <div className="w-full h-[220px] flex flex-col items-center justify-center bg-surface-sunken rounded-[12px] border border-surface-hairline">
+        <div className="w-6 h-6 border-2 border-brand-blue border-t-transparent rounded-full animate-spin mb-3" />
+        <div className="text-[12px] font-medium text-text-secondary">Loading price history…</div>
       </div>
     );
   }
 
   if (data.length === 0) {
     return (
-      <div className="w-full h-[220px] flex items-center justify-center bg-surface-card rounded-[12px] border border-surface-border">
-        <div className="text-sm text-text-secondary">No chart data available</div>
+      <div className="w-full h-[220px] flex flex-col items-center justify-center bg-surface-sunken rounded-[12px] border border-dashed border-surface-border px-6 text-center">
+        <div className="text-[13px] font-semibold text-text-primary">No chart data yet</div>
+        <div className="text-[12px] text-text-secondary mt-1 max-w-[240px] leading-relaxed">
+          Price history builds up as ticks are collected during market hours.
+        </div>
       </div>
     );
   }
@@ -206,8 +209,8 @@ export function CandlestickChart({ activeTimeframe }) {
 
       {!hasLevels && (
         <div className="absolute -bottom-6 left-0 right-0 border-t border-dashed border-surface-border pt-2 text-center">
-          <span className="text-[12px] text-text-secondary">
-            Configure alert levels below to see them on this chart
+          <span className="text-[11.5px] text-text-tertiary">
+            Arm a level below to see it plotted here
           </span>
         </div>
       )}

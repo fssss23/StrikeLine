@@ -3,8 +3,78 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    /* Height of the floating mobile pill nav (incl. its outer gutter). Pages
+       use this to reserve scroll room so nothing hides behind the nav. */
+    --pillnav-h: 76px;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
   body {
     @apply bg-surface-page text-text-primary;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: 'cv11', 'ss01';
+    font-variant-ligatures: contextual;
+    letter-spacing: -0.011em;
+    /* Stops the grey flash on tap across the whole app (mobile polish) */
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+  }
+
+  /* Headings read tighter — the single highest-leverage typographic move
+     for making an interface feel designed rather than defaulted. */
+  h1, h2, h3, h4 {
+    letter-spacing: -0.021em;
+  }
+
+  /* Native controls should never look native in a designed product */
+  input, select, textarea, button {
+    font-family: inherit;
+    letter-spacing: inherit;
+  }
+
+  input[type='date'],
+  input[type='number'] {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  select {
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748B' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    -webkit-appearance: none;
+    appearance: none;
+    padding-right: 32px;
+  }
+
+  ::selection {
+    background: rgba(37, 99, 235, 0.16);
+  }
+
+  /* Slim, unobtrusive scrollbars on desktop */
+  @media (pointer: fine) {
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(100, 116, 139, 0.22);
+      border-radius: 999px;
+      border: 3px solid transparent;
+      background-clip: content-box;
+    }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(100, 116, 139, 0.38); background-clip: content-box; }
   }
 }
 
@@ -26,8 +96,54 @@
   100% { background-position: -200% 0; }
 }
 
+@layer components {
+  /* ---- Surfaces -------------------------------------------------------- */
+  .sl-card {
+    @apply bg-surface-card rounded-xcard border border-surface-hairline shadow-card;
+  }
+  .sl-card-interactive {
+    @apply sl-card transition-all duration-200 ease-swift hover:shadow-raised hover:border-surface-border;
+  }
+  /* Frosted chrome used by the mobile header and the floating pill nav */
+  .sl-glass {
+    background-color: rgba(255, 255, 255, 0.82);
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+  }
+  .sl-glass-strong {
+    background-color: rgba(255, 255, 255, 0.94);
+    backdrop-filter: saturate(180%) blur(24px);
+    -webkit-backdrop-filter: saturate(180%) blur(24px);
+  }
+
+  /* ---- Type ------------------------------------------------------------ */
+  .sl-eyebrow {
+    @apply text-[10px] font-bold uppercase tracking-[0.09em] text-text-tertiary;
+  }
+  .sl-h1 { @apply text-[22px] md:text-2xl font-bold text-text-primary tracking-tighter; }
+  .sl-h2 { @apply text-[17px] md:text-lg font-bold text-text-primary tracking-tighter; }
+  .sl-sub { @apply text-[13px] md:text-sm text-text-secondary; }
+
+  /* ---- Numerals -------------------------------------------------------- */
+  .sl-num {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+
+  /* ---- Touch ----------------------------------------------------------- */
+  /* Every tappable thing on mobile clears the 44px Apple HIG target and
+     gives physical feedback on press. */
+  .sl-tap {
+    -webkit-tap-highlight-color: transparent;
+    @apply transition-transform duration-150 ease-swift active:scale-[0.97];
+  }
+  .sl-divider { @apply border-b border-surface-hairline last:border-b-0; }
+}
 
 @layer utilities {
+  .pb-nav { padding-bottom: calc(var(--pillnav-h) + env(safe-area-inset-bottom, 0px)); }
+  .bottom-nav { bottom: calc(var(--pillnav-h) + env(safe-area-inset-bottom, 0px)); }
+
   .custom-slider {
     background-image: linear-gradient(#0D2F55, #0D2F55);
     background-repeat: no-repeat;
@@ -50,5 +166,16 @@
     border: 2px solid #0D2F55;
     cursor: pointer;
     box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  }
+}
+
+/* Respect the OS reduced-motion setting — a real product requirement, and
+   the animations here are decorative. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

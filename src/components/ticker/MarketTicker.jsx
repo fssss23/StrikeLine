@@ -1,53 +1,42 @@
 import React from 'react';
 import { cn } from '../../lib/utils';
 
-export const MarketTicker = ({ className }) => {
-  const items = [
-    { symbol: 'OGDC', price: '189.50', change: '+1.24%' },
-    { symbol: 'LUCK', price: '1,042.00', change: '-0.82%' },
-    { symbol: 'ENGRO', price: '334.75', change: '+2.14%' },
-    { symbol: 'HBL', price: '175.20', change: '-0.31%' },
-    { symbol: 'MARI', price: '3,210.00', change: '+0.51%' },
-    { symbol: 'HUBC', price: '142.30', change: '+0.07%' },
-    { symbol: 'PSO', price: '288.40', change: '+1.10%' },
-    { symbol: 'PPL', price: '104.80', change: '-0.55%' },
-  ];
+// Brand strip for the signed-out hero. It lists PSX board names only — no
+// prices — because live ticks are gated behind auth (RLS) and this product
+// must never show a number a trader could mistake for a real quote.
+const SYMBOLS = [
+  'OGDC', 'LUCK', 'ENGROH', 'HBL', 'MARI', 'HUBC', 'PSO', 'PPL',
+  'MCB', 'UBL', 'FFC', 'TRG', 'SYS', 'MEBL', 'BAHL', 'POL',
+];
 
+export const MarketTicker = ({ className }) => {
   const TickerContent = () => (
-    <div className="flex items-center whitespace-nowrap min-w-full justify-around h-full">
-      {items.map((item, idx) => {
-        const isUp = item.change.startsWith('+');
-        return (
-          <React.Fragment key={idx}>
-            <div className="flex items-center gap-1.5 px-4 font-mono text-[13px]">
-              <span className="font-bold text-text-inverse">{item.symbol}</span>
-              <span className="tabular-nums text-text-inverse">{item.price}</span>
-              <span className={cn(
-                "tabular-nums",
-                isUp ? "text-[#7FB3D3]" : "text-red-400"
-              )}>
-                {isUp ? '▲' : '▼'} {item.change.replace(/[+-]/, '')}
-              </span>
-            </div>
-            {idx < items.length - 1 && <span className="text-[#7FB3D3]/50">·</span>}
-          </React.Fragment>
-        );
-      })}
+    <div className="flex items-center whitespace-nowrap h-full">
+      {SYMBOLS.map((symbol, idx) => (
+        <React.Fragment key={idx}>
+          <span className="px-4 text-[12px] font-semibold tracking-[0.08em] text-white/70">
+            {symbol}
+          </span>
+          <span className="w-1 h-1 rounded-full bg-brand-blueLight/40 shrink-0" />
+        </React.Fragment>
+      ))}
     </div>
   );
 
   return (
-    <div className={cn("overflow-hidden bg-brand-navy h-10 border-t border-white/10 flex items-center relative", className)}>
-      <div className="absolute flex whitespace-nowrap animate-[marquee_40s_linear_infinite]">
+    <div
+      className={cn(
+        'overflow-hidden h-10 border-t border-white/[0.08] flex items-center relative',
+        className
+      )}
+    >
+      <div className="flex whitespace-nowrap animate-marquee">
         <TickerContent />
         <TickerContent />
       </div>
-      <style>{`
-        @keyframes marquee {
-          0% { transform: translateX(0%); }
-          100% { transform: translateX(-50%); }
-        }
-      `}</style>
+      {/* Edge fades so the loop reads as continuous motion, not a hard cut */}
+      <div className="pointer-events-none absolute inset-y-0 left-0 w-16 bg-gradient-to-r from-brand-navyDeep to-transparent" />
+      <div className="pointer-events-none absolute inset-y-0 right-0 w-16 bg-gradient-to-l from-brand-navyDeep to-transparent" />
     </div>
   );
 };

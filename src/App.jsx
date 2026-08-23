@@ -11,6 +11,7 @@ import WatchlistPage from './pages/WatchlistPage'
 import SettingsPage from './pages/SettingsPage'
 import AdminPage from './pages/AdminPage'
 import { SecurityDrawer } from './components/drawer/SecurityDrawer'
+import { StrikeLineLogo } from './components/logo/StrikeLineLogo'
 import { useUserStore } from './store/useUserStore'
 
 // ProtectedRoute removed as logic is handled at the App and Router level.
@@ -22,6 +23,29 @@ function AdminRoute({ children }) {
   return user?.is_admin ? children : <Navigate to="/" replace />
 }
 
+/** Cold-boot screen shown while the initial session resolves. */
+function BootScreen() {
+  return (
+    <div className="min-h-[100dvh] bg-surface-page flex flex-col items-center justify-center gap-6">
+      <div className="animate-fade-in">
+        <StrikeLineLogo variant="full" />
+      </div>
+      <div className="h-[3px] w-32 rounded-full bg-surface-border overflow-hidden">
+        <div
+          className="h-full w-1/3 rounded-full bg-brand-blue"
+          style={{ animation: 'bootSlide 1.1s cubic-bezier(0.65,0,0.35,1) infinite' }}
+        />
+      </div>
+      <style>{`
+        @keyframes bootSlide {
+          0%   { transform: translateX(-120%); }
+          100% { transform: translateX(420%); }
+        }
+      `}</style>
+    </div>
+  )
+}
+
 export default function App() {
   const session = useUserStore(state => state.session)
   const initializeAuth = useUserStore(state => state.initializeAuth)
@@ -31,28 +55,7 @@ export default function App() {
     return () => subscription?.unsubscribe()
   }, [initializeAuth])
 
-  if (session === undefined) {
-    return (
-      <div style={{
-        minHeight: '100vh',
-        background: '#F8F9FB',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center'
-      }}>
-        <div style={{
-          width: 32, height: 32, border: '3px solid #E4E7ED',
-          borderTopColor: '#0D2F55', borderRadius: '50%',
-          animation: 'spin 600ms linear infinite'
-        }} />
-        <style>{`
-          @keyframes spin {
-            to { transform: rotate(360deg); }
-          }
-        `}</style>
-      </div>
-    )
-  }
+  if (session === undefined) return <BootScreen />
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -73,14 +76,19 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         <SecurityDrawer />
-        <Toaster position="bottom-right" richColors />
+        {/* Toasts clear the floating pill nav on mobile (nav is ~76px tall) */}
+        <Toaster
+          position="bottom-right"
+          richColors
+          mobileOffset={{ bottom: '92px', left: '12px', right: '12px' }}
+          toastOptions={{
+            style: {
+              borderRadius: '12px',
+              fontSize: '13.5px',
+            },
+          }}
+        />
       </BrowserRouter>
-
-      <style>{`
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
     </QueryClientProvider>
   )
 }

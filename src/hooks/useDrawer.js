@@ -20,7 +20,9 @@ export function useDrawer() {
           .single(),
         supabase
           .from('price_ticks')
-          .select('last_price, change_pct, change_abs')
+          // open/high/low/volume come from the same tick row the price does —
+          // they feed the session strip in the drawer header.
+          .select('last_price, change_pct, change_abs, open_price, high_price, low_price, volume, scraped_at')
           .eq('symbol', drawerSymbol)
           .order('scraped_at', { ascending: false })
           .limit(1)
@@ -47,6 +49,11 @@ export function useDrawer() {
         price: priceResult.data?.last_price ?? null,
         change_pct: priceResult.data?.change_pct ?? null,
         change_abs: priceResult.data?.change_abs ?? null,
+        open_price: priceResult.data?.open_price ?? null,
+        high_price: priceResult.data?.high_price ?? null,
+        low_price: priceResult.data?.low_price ?? null,
+        volume: priceResult.data?.volume ?? null,
+        scraped_at: priceResult.data?.scraped_at ?? null,
         alert_rule: alertResult.data ?? null
       }
     },

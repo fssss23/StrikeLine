@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
 import { useQueryClient } from '@tanstack/react-query'
-import { Info, TrendingDown, TrendingUp, Zap } from 'lucide-react'
+import { Info, TrendingDown, TrendingUp, Zap, Send } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '../../lib/supabase'
 import { useDrawer } from '../../hooks/useDrawer'
@@ -120,73 +120,79 @@ export function AlertConfigForm() {
 
   if (!security) return null
 
+  const rows = [
+    { type: 'support', label: 'Support', icon: <TrendingDown size={16} />, color: 'green', error: errors.supportLevel, last: lastTriggered?.support ?? null },
+    { type: 'resistance', label: 'Resistance', icon: <TrendingUp size={16} />, color: 'red', error: errors.resistanceLevel, last: lastTriggered?.resistance ?? null },
+    { type: 'breakout', label: 'Breakout', icon: <Zap size={16} />, color: 'amber', error: errors.breakoutLevel, last: lastTriggered?.breakout ?? null },
+  ]
+
   return (
-    <div>
-      <div className="flex items-center gap-2 mb-2">
-        <h3 className="text-[18px] font-bold text-text-primary">Alert Levels</h3>
-        <div className="relative group cursor-help text-text-secondary">
-          <Info size={16} />
-          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-3 bg-slate-900 text-white text-xs rounded-[8px] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all shadow-xl z-50 pointer-events-none">
-            You'll get a heads-up when the live price comes within 1% of an enabled level, and again the moment it actually crosses it.
-            <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-slate-900 rotate-45" />
-          </div>
-        </div>
+    <div className="px-5 pt-5">
+      <div className="flex items-baseline justify-between gap-3 mb-1">
+        <h3 className="text-[16px] font-bold text-text-primary tracking-tighter">Alert Levels</h3>
+        <span className="text-[11.5px] text-text-tertiary">PKR</span>
       </div>
-
-      <div className="flex flex-col mb-4">
-        <AlertLevelRow
-          type="support" label="Support Level"
-          icon={<TrendingDown size={16} />} color="green"
-          register={register} watch={watch} setValue={setValue}
-          lastTriggered={lastTriggered?.support ?? null}
-        />
-        {errors.supportLevel && (
-          <span className="text-[12px] text-signal-red mt-1">{errors.supportLevel.message}</span>
-        )}
-
-        <AlertLevelRow
-          type="resistance" label="Resistance Level"
-          icon={<TrendingUp size={16} />} color="red"
-          register={register} watch={watch} setValue={setValue}
-          lastTriggered={lastTriggered?.resistance ?? null}
-        />
-        {errors.resistanceLevel && (
-          <span className="text-[12px] text-signal-red mt-1">{errors.resistanceLevel.message}</span>
-        )}
-
-        <AlertLevelRow
-          type="breakout" label="Breakout Level"
-          icon={<Zap size={16} />} color="amber"
-          register={register} watch={watch} setValue={setValue}
-          lastTriggered={lastTriggered?.breakout ?? null}
-        />
-        {errors.breakoutLevel && (
-          <span className="text-[12px] text-signal-red mt-1">{errors.breakoutLevel.message}</span>
-        )}
-      </div>
-
-      <p className="text-[12px] text-text-secondary bg-surface-page border border-surface-border rounded-[8px] px-3 py-2 mb-4">
-        Alerts fire within <span className="font-semibold text-text-primary">1%</span> of a level, and again the moment it's actually hit. Repeat heads-ups are spaced at least <span className="font-semibold text-text-primary">90 minutes</span> apart.
+      <p className="text-[12.5px] text-text-secondary leading-relaxed mb-4">
+        Arm a level and StrikeLine watches the live price for you.
       </p>
 
-      <div className="flex flex-col gap-3 mt-6">
+      <div className="flex flex-col gap-2.5">
+        {rows.map(r => (
+          <div key={r.type}>
+            <AlertLevelRow
+              type={r.type}
+              label={r.label}
+              icon={r.icon}
+              color={r.color}
+              register={register}
+              watch={watch}
+              setValue={setValue}
+              lastTriggered={r.last}
+            />
+            {r.error && (
+              <span className="block text-[11.5px] font-medium text-signal-red mt-1.5 ml-1">
+                {r.error.message}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div className="flex gap-2.5 mt-4 rounded-[12px] bg-brand-blueSoft/70 ring-1 ring-inset ring-brand-blue/10 px-3 py-2.5">
+        <Info size={14} className="text-brand-blue shrink-0 mt-0.5" />
+        <p className="text-[11.5px] text-text-secondary leading-relaxed">
+          Alerts fire within <span className="font-semibold text-text-primary">1%</span> of a level, and again
+          the moment it&apos;s actually hit. Repeat heads-ups are spaced at least{' '}
+          <span className="font-semibold text-text-primary">90 minutes</span> apart.
+        </p>
+      </div>
+
+      <button
+        type="button"
+        onClick={handleTestNotification}
+        disabled={isTesting}
+        className="sl-tap w-full mt-3 h-10 rounded-[10px] flex items-center justify-center gap-1.5 text-[13px] font-semibold text-brand-blue hover:bg-brand-blueSoft transition-colors disabled:opacity-50"
+      >
+        <Send size={14} />
+        {isTesting ? 'Sending…' : 'Send test notification'}
+      </button>
+
+      {/* Pinned to the bottom of the drawer's scroll viewport — the primary
+          action stays in the thumb zone no matter how far you have scrolled. */}
+      <div
+        className="sticky bottom-0 -mx-5 mt-4 px-5 pt-3 sl-glass-strong border-t border-surface-hairline"
+        style={{ paddingBottom: 'calc(0.875rem + env(safe-area-inset-bottom, 0px))' }}
+      >
         <Button
           variant="primary"
-          className="w-full"
+          size="lg"
+          fullWidth
           type="button"
-          disabled={isSaving}
+          loading={isSaving}
           onClick={handleSubmit(onSubmit)}
         >
-          {isSaving ? 'Saving...' : 'Save Alert'}
+          {isSaving ? 'Saving…' : 'Save alert levels'}
         </Button>
-        <button
-          type="button"
-          onClick={handleTestNotification}
-          disabled={isTesting}
-          className="text-[14px] text-brand-blue text-center hover:underline font-medium disabled:opacity-50"
-        >
-          {isTesting ? 'Sending…' : 'Send test notification'}
-        </button>
       </div>
     </div>
   )

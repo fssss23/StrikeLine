@@ -1,19 +1,31 @@
 import { Users, Bell, Zap, Ban, Activity } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { Badge } from '../ui/Badge';
+import { Card, CardHeader, CardBody } from '../ui/Card';
+import { cn } from '../../lib/utils';
 
-function StatCard({ label, icon, value, valueClass, caption }) {
+const TONES = {
+  neutral: { plate: 'bg-surface-muted text-text-secondary', value: 'text-text-primary' },
+  amber:   { plate: 'bg-signal-amberBg text-signal-amber',  value: 'text-signal-amber' },
+  green:   { plate: 'bg-signal-greenBg text-signal-green',  value: 'text-signal-green' },
+  red:     { plate: 'bg-signal-redBg text-signal-red',      value: 'text-signal-red' },
+};
+
+function StatCard({ label, icon, value, tone = 'neutral', caption }) {
+  const t = TONES[tone] || TONES.neutral;
   return (
-    <div className="bg-surface-card rounded-[12px] shadow-card p-5 flex flex-col justify-between h-32">
-      <div className="flex justify-between items-start">
-        <span className="text-[11px] font-bold uppercase tracking-wider text-text-secondary">{label}</span>
-        <div className="w-8 h-8 rounded-full bg-surface-muted flex items-center justify-center text-text-secondary">
+    <div className="sl-card p-3.5 md:p-5 flex flex-col justify-between min-h-[104px] md:min-h-[128px]">
+      <div className="flex justify-between items-start gap-2">
+        <span className="sl-eyebrow leading-[1.35] pt-0.5">{label}</span>
+        <div className={cn('w-7 h-7 md:w-8 md:h-8 rounded-[9px] flex items-center justify-center shrink-0', t.plate)}>
           {icon}
         </div>
       </div>
-      <div>
-        <div className={`text-[28px] leading-none font-bold mb-1 tabular-nums ${valueClass || 'text-text-primary'}`}>{value}</div>
-        <div className="text-xs text-text-secondary">{caption}</div>
+      <div className="mt-3">
+        <div className={cn('text-[24px] md:text-[30px] leading-none font-bold sl-num tracking-tighter', t.value)}>
+          {value}
+        </div>
+        <div className="text-[11.5px] md:text-xs text-text-secondary mt-1.5 leading-snug">{caption}</div>
       </div>
     </div>
   );
@@ -33,69 +45,67 @@ export function AdminStats({ stats, scraper }) {
   const sc = scraper || {};
   const health = scrapeHealth(sc.lastScrapedAt, sc.marketOpen);
 
+  const healthRows = [
+    {
+      label: 'Last Scrape',
+      value: sc.lastScrapedAt ? formatDistanceToNow(new Date(sc.lastScrapedAt), { addSuffix: true }) : '—',
+    },
+    { label: 'Ticks Last Run', value: sc.ticksLastRun ?? '—' },
+    { label: 'Market', value: null, badge: { variant: sc.marketOpen ? 'green' : 'grey', text: sc.marketOpen ? 'Open' : 'Closed' } },
+    { label: 'Server (PKT)', value: sc.serverPkt ? new Date(sc.serverPkt).toISOString().slice(11, 16) : '—' },
+  ];
+
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 md:gap-4">
         <StatCard
           label="Total Users"
-          icon={<Users className="w-4 h-4" />}
+          icon={<Users className="w-[15px] h-[15px]" />}
           value={s.totalUsers ?? '—'}
           caption={`${s.admins ?? 0} admin${s.admins === 1 ? '' : 's'}`}
         />
         <StatCard
           label="Active Alert Levels"
-          icon={<Bell className="w-4 h-4" />}
+          icon={<Bell className="w-[15px] h-[15px]" />}
           value={s.activeRules ?? '—'}
-          valueClass="text-signal-amber"
+          tone="amber"
           caption={`${s.watchlistItems ?? 0} watchlist items`}
         />
         <StatCard
           label="Alerts Today"
-          icon={<Zap className="w-4 h-4" />}
+          icon={<Zap className="w-[15px] h-[15px]" />}
           value={s.eventsToday ?? '—'}
-          valueClass="text-signal-green"
+          tone="green"
           caption={`${s.sentToday ?? 0} sent · ${s.failedToday ?? 0} failed`}
         />
         <StatCard
           label="Restricted Users"
-          icon={<Ban className="w-4 h-4" />}
+          icon={<Ban className="w-[15px] h-[15px]" />}
           value={s.restricted ?? '—'}
-          valueClass={s.restricted > 0 ? 'text-signal-red' : undefined}
+          tone={s.restricted > 0 ? 'red' : 'neutral'}
           caption="blocked from the app"
         />
       </div>
 
-      <div className="bg-white border border-surface-border rounded-[12px] shadow-sm p-5">
-        <div className="flex items-center gap-2 mb-4">
-          <Activity size={18} className="text-text-primary" />
-          <h3 className="text-[15px] font-bold text-text-primary">Scraper Health</h3>
-          <Badge variant={health.variant} className="ml-auto">{health.label}</Badge>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-          <div>
-            <div className="text-[11px] font-bold uppercase tracking-wider text-text-secondary mb-1">Last Scrape</div>
-            <div className="text-text-primary font-medium tabular-nums">
-              {sc.lastScrapedAt ? formatDistanceToNow(new Date(sc.lastScrapedAt), { addSuffix: true }) : '—'}
+      <Card>
+        <CardHeader
+          icon={Activity}
+          title="Scraper Health"
+          action={<Badge variant={health.variant}>{health.label}</Badge>}
+        />
+        <CardBody className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {healthRows.map(r => (
+            <div key={r.label}>
+              <div className="sl-eyebrow mb-1.5">{r.label}</div>
+              {r.badge ? (
+                <Badge variant={r.badge.variant}>{r.badge.text}</Badge>
+              ) : (
+                <div className="text-[13.5px] text-text-primary font-semibold sl-num">{r.value}</div>
+              )}
             </div>
-          </div>
-          <div>
-            <div className="text-[11px] font-bold uppercase tracking-wider text-text-secondary mb-1">Ticks Last Run</div>
-            <div className="text-text-primary font-medium tabular-nums">{sc.ticksLastRun ?? '—'}</div>
-          </div>
-          <div>
-            <div className="text-[11px] font-bold uppercase tracking-wider text-text-secondary mb-1">Market</div>
-            <div className="text-text-primary font-medium">
-              <Badge variant={sc.marketOpen ? 'green' : 'grey'}>{sc.marketOpen ? 'Open' : 'Closed'}</Badge>
-            </div>
-          </div>
-          <div>
-            <div className="text-[11px] font-bold uppercase tracking-wider text-text-secondary mb-1">Server (PKT)</div>
-            <div className="text-text-primary font-medium tabular-nums">
-              {sc.serverPkt ? new Date(sc.serverPkt).toISOString().slice(11, 16) : '—'}
-            </div>
-          </div>
-        </div>
-      </div>
+          ))}
+        </CardBody>
+      </Card>
     </div>
   );
 }

@@ -1,9 +1,16 @@
 import React, { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
 import { useDrawer } from '../../hooks/useDrawer'
-import { Badge } from '../ui/Badge'
 import { PriceChange } from '../ui/PriceChange'
 import { usePriceFlash } from '../../hooks/usePriceFlash'
+import { cn } from '../../lib/utils'
+
+function formatVolume(v) {
+  if (v == null) return '—'
+  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(2)}M`
+  if (v >= 1_000) return `${(v / 1_000).toFixed(1)}K`
+  return String(v)
+}
 
 export function DrawerHeader() {
   const { security, closeDrawer } = useDrawer()
@@ -26,73 +33,72 @@ export function DrawerHeader() {
 
   if (!security) return null
 
+  const stats = [
+    { label: 'Open', value: security.open_price != null ? security.open_price.toFixed(2) : '—' },
+    { label: 'High', value: security.high_price != null ? security.high_price.toFixed(2) : '—' },
+    { label: 'Low', value: security.low_price != null ? security.low_price.toFixed(2) : '—' },
+    { label: 'Volume', value: formatVolume(security.volume) },
+  ]
+
   return (
-    <div className="flex flex-col">
-      <div className="h-[64px] px-6 flex flex-row items-center justify-between border-b border-surface-border shrink-0">
-
-        {/* Left: Name + Symbol */}
-        <div className="flex-1 min-w-0">
-          <div className="flex flex-row items-center gap-2 mb-0.5">
-            <span className="text-[18px] font-bold text-text-primary truncate">
+    <div className="flex flex-col shrink-0">
+      <div className="px-5 pt-4 pb-4">
+        <div className="flex items-start gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="inline-flex items-center px-1.5 h-[20px] rounded-md bg-brand-navy text-white text-[11px] font-bold tracking-tight shrink-0">
+                {security.symbol}
+              </span>
+              <span className="text-[11.5px] text-text-tertiary truncate">{security.sector}</span>
+            </div>
+            <h2 className="text-[17px] font-bold text-text-primary tracking-tighter leading-snug line-clamp-2">
               {security.company_name}
-            </span>
-            <Badge variant="navy" className="shrink-0">{security.symbol}</Badge>
+            </h2>
           </div>
-          <div className="flex flex-row items-center gap-2">
-            <span className="text-[12px] text-text-secondary">{security.sector}</span>
-            <Badge variant="grey" className="text-[10px] py-0">PSX Main Board</Badge>
-          </div>
-        </div>
 
-        {/* Center: Price */}
-        <div className="flex-1 flex flex-col items-center justify-center">
-          {security.price != null ? (
-            <>
-              <div className={`text-[28px] leading-none font-bold tabular-nums text-text-primary transition-colors ${flashClass}`}>
-                {security.price.toFixed(2)}
-              </div>
-              <div className="flex flex-row items-center gap-2 mt-1">
-                <PriceChange value={security.change_pct} absolute={security.change_abs} />
-                <span className="text-[11px] text-text-secondary">Updated {secondsAgo}s ago</span>
-              </div>
-            </>
-          ) : (
-            <span className="text-[14px] text-text-secondary">No price data</span>
-          )}
-        </div>
-
-        {/* Right: Close */}
-        <div className="flex-1 flex justify-end">
           <button
             onClick={closeDrawer}
-            className="w-9 h-9 rounded-full flex items-center justify-center text-text-secondary hover:bg-surface-page hover:text-text-primary transition-colors"
+            aria-label="Close"
+            className="sl-tap w-9 h-9 rounded-full flex items-center justify-center text-text-secondary hover:bg-surface-muted hover:text-text-primary transition-colors shrink-0 -mt-1 -mr-1"
           >
-            <X size={20} />
+            <X size={19} />
           </button>
         </div>
+
+        {security.price != null ? (
+          <div className="flex items-end gap-3 mt-4 flex-wrap">
+            <div className={cn('text-[34px] leading-none font-bold sl-num text-text-primary rounded px-1 -mx-1 transition-colors', flashClass)}>
+              {security.price.toFixed(2)}
+            </div>
+            <div className="flex items-center gap-2.5 pb-0.5">
+              <PriceChange
+                value={security.change_pct}
+                absolute={security.change_abs}
+                layout="inline"
+                size="md"
+              />
+              <span className="text-[11px] text-text-tertiary sl-num whitespace-nowrap">
+                {secondsAgo}s ago
+              </span>
+            </div>
+          </div>
+        ) : (
+          <p className="text-[13.5px] text-text-secondary mt-4">No price data available yet</p>
+        )}
       </div>
 
-      {/* Market detail strip — static labels, DB does not expose these fields */}
-      <div className="px-6 py-2 flex flex-row items-center gap-6 bg-surface-muted border-b border-surface-border overflow-x-auto no-scrollbar">
-        <DetailItem label="52W High" value={null} />
-        <div className="w-[1px] h-3 bg-surface-border" />
-        <DetailItem label="52W Low" value={null} />
-        <div className="w-[1px] h-3 bg-surface-border" />
-        <DetailItem label="Mkt Cap" value={null} />
-        <div className="w-[1px] h-3 bg-surface-border" />
-        <DetailItem label="P/E" value={null} />
-        <div className="w-[1px] h-3 bg-surface-border" />
-        <DetailItem label="Avg Vol" value={null} />
+      {/* Session stats straight from the latest tick */}
+      <div className="grid grid-cols-4 bg-surface-sunken border-y border-surface-hairline">
+        {stats.map((s, i) => (
+          <div
+            key={s.label}
+            className={cn('px-3 py-2.5 min-w-0', i > 0 && 'border-l border-surface-hairline')}
+          >
+            <p className="sl-eyebrow leading-none mb-1.5">{s.label}</p>
+            <p className="text-[12.5px] font-bold sl-num text-text-primary truncate">{s.value}</p>
+          </div>
+        ))}
       </div>
-    </div>
-  )
-}
-
-function DetailItem({ label, value }) {
-  return (
-    <div className="flex flex-row items-center gap-1.5 whitespace-nowrap">
-      <span className="text-[10px] uppercase text-text-secondary font-medium tracking-wide">{label}</span>
-      <span className="text-[12px] font-bold text-text-primary">{value ?? '—'}</span>
     </div>
   )
 }

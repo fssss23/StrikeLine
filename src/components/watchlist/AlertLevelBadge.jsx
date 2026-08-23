@@ -1,34 +1,34 @@
 import React from 'react';
 import { cn } from '../../lib/utils';
-import { Badge } from '../ui/Badge';
+
+const CONFIG = {
+  support:    { prefix: 'S', on: 'bg-signal-greenBg text-signal-green ring-signal-green/18' },
+  resistance: { prefix: 'R', on: 'bg-signal-redBg text-signal-red ring-signal-red/18' },
+  breakout:   { prefix: 'B', on: 'bg-signal-amberBg text-signal-amber ring-signal-amber/18' },
+};
 
 export const AlertLevelBadge = ({ type, level, enabled, triggered }) => {
+  const c = CONFIG[type] ?? CONFIG.breakout;
+  const base = 'inline-flex items-center gap-1 px-2 h-[22px] rounded-pill text-[11px] font-semibold sl-num ring-1 ring-inset whitespace-nowrap';
+
   if (level === null || level === undefined) {
-    const label = type === 'support' ? 'S' : type === 'resistance' ? 'R' : 'B';
     return (
-      <button className="px-2 py-0.5 rounded-pill text-[11px] font-medium border border-transparent bg-surface-muted text-text-secondary hover:border-surface-border transition-colors">
-        + Set {label}
-      </button>
+      <span
+        className={cn(
+          base,
+          'bg-surface-muted/70 text-text-tertiary ring-slate-900/[0.05] border-dashed'
+        )}
+      >
+        {c.prefix} <span className="opacity-70">—</span>
+      </span>
     );
   }
 
-  const baseClasses = "px-2 py-0.5 rounded-pill text-[11px] font-medium border tabular-nums flex items-center gap-1";
-  
-  let typeClasses = "";
-  let prefix = type === 'support' ? 'S' : type === 'resistance' ? 'R' : 'B';
-
-  if (type === 'support') {
-    typeClasses = "bg-signal-greenBg text-signal-green border-signal-green/20";
-  } else if (type === 'resistance') {
-    typeClasses = "bg-signal-redBg text-signal-red border-signal-red/20";
-  } else {
-    typeClasses = "bg-signal-amberBg text-signal-amber border-signal-amber/20";
-  }
-
   return (
-    <div className={cn(baseClasses, typeClasses, !enabled && "opacity-40")}>
-      {triggered && <span>⚡</span>}
-      {prefix} {level.toFixed(2)}
-    </div>
+    <span className={cn(base, c.on, !enabled && 'opacity-40 saturate-50')}>
+      {triggered && <span aria-hidden="true">⚡</span>}
+      <span className="font-bold">{c.prefix}</span>
+      {level.toFixed(2)}
+    </span>
   );
 };

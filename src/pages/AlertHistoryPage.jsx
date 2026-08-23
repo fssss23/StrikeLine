@@ -1,9 +1,12 @@
 import { useState, useMemo } from 'react';
-import { AlertTriangle, Download } from 'lucide-react';
+import { Download, Inbox } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { HistoryFilterBar } from '../components/history/HistoryFilterBar';
 import { HistoryTable } from '../components/history/HistoryTable';
+import { PageHeader } from '../components/ui/PageHeader';
+import { Button } from '../components/ui/Button';
+import { EmptyState, ErrorState } from '../components/ui/States';
 import { useAlertHistory } from '../hooks/queries/useAlertHistoryQuery';
 
 function exportToCsv(alerts) {
@@ -36,17 +39,24 @@ function exportToCsv(alerts) {
 
 function HistorySkeleton() {
   return (
-    <div className="bg-surface-card border border-surface-border rounded-[12px] overflow-hidden">
+    <div className="space-y-2.5 md:space-y-0 md:bg-surface-card md:rounded-xcard md:border md:border-surface-hairline md:shadow-card md:overflow-hidden">
       {[0, 1, 2, 3, 4].map(i => (
-        <div key={i} className="flex items-center gap-6 px-5 py-4 border-b border-surface-border last:border-b-0 animate-pulse">
-          <div className="h-3 w-24 bg-surface-muted rounded" />
-          <div className="flex-1">
-            <div className="h-4 w-40 bg-surface-muted rounded mb-1.5" />
-            <div className="h-3 w-14 bg-surface-muted rounded" />
+        <div
+          key={i}
+          className="bg-surface-card rounded-xcard border border-surface-hairline shadow-card p-3.5 md:rounded-none md:border-0 md:border-b md:border-surface-hairline md:shadow-none md:last:border-b-0 md:px-5 md:py-4 animate-pulse"
+        >
+          <div className="md:flex md:items-center md:gap-6">
+            <div className="flex items-center justify-between gap-3 md:contents">
+              <div className="h-5 w-20 bg-surface-muted rounded-pill md:order-2" />
+              <div className="h-3 w-24 bg-surface-muted rounded md:order-1" />
+            </div>
+            <div className="mt-2.5 md:mt-0 md:flex-1">
+              <div className="h-4 w-44 max-w-full bg-surface-muted rounded mb-1.5" />
+              <div className="h-3 w-14 bg-surface-muted rounded" />
+            </div>
+            <div className="hidden md:block h-4 w-24 bg-surface-muted rounded" />
+            <div className="hidden md:block h-4 w-24 bg-surface-muted rounded" />
           </div>
-          <div className="h-5 w-20 bg-surface-muted rounded-pill" />
-          <div className="h-4 w-24 bg-surface-muted rounded" />
-          <div className="h-4 w-24 bg-surface-muted rounded" />
         </div>
       ))}
     </div>
@@ -102,53 +112,59 @@ export default function AlertHistoryPage() {
   ).length;
 
   return (
-    <div className="max-w-[1200px] mx-auto w-full space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">Alert History</h1>
-          <p className="text-text-secondary text-sm mt-1">
-            Complete log of every alert triggered across your watchlist.
-          </p>
-        </div>
-        {!isLoading && !isError && events.length > 0 && (
-          <button
-            onClick={() => exportToCsv(filteredAlerts)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-[8px] border border-surface-border bg-surface-card text-[13px] font-semibold text-text-primary hover:bg-surface-muted transition-colors shrink-0"
-          >
-            <Download size={14} />
-            Export CSV
-          </button>
-        )}
-      </div>
+    <div className="max-w-[1200px] mx-auto w-full">
+      <PageHeader
+        eyebrow="Delivery log"
+        title="Alert History"
+        subtitle="Every alert triggered across your watchlist, with the level, the price that fired it, and how it was delivered."
+        action={
+          !isLoading && !isError && events.length > 0 ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={Download}
+              onClick={() => exportToCsv(filteredAlerts)}
+            >
+              <span className="hidden sm:inline">Export CSV</span>
+              <span className="sm:hidden">CSV</span>
+            </Button>
+          ) : null
+        }
+      />
 
       {isLoading ? (
         <HistorySkeleton />
       ) : isError ? (
-        <div className="bg-surface-card border border-surface-border rounded-[12px] p-12 flex flex-col items-center text-center">
-          <div className="w-12 h-12 rounded-full bg-signal-redBg text-signal-red flex items-center justify-center mb-3">
-            <AlertTriangle className="w-6 h-6" />
-          </div>
-          <h3 className="text-[15px] font-bold text-text-primary mb-1">Couldn't load alert history</h3>
-          <p className="text-[13px] text-text-secondary mb-4">{error?.message || 'Something went wrong.'}</p>
-          <button
-            onClick={() => refetch()}
-            className="px-4 py-2 rounded-[8px] bg-brand-navy text-white text-[13px] font-semibold hover:bg-[#1A4A7A] transition-colors"
-          >
-            Try Again
-          </button>
-        </div>
+        <ErrorState
+          title="Couldn't load alert history"
+          message={error?.message || 'Something went wrong.'}
+          onRetry={() => refetch()}
+        />
+      ) : events.length === 0 ? (
+        <EmptyState
+          icon={Inbox}
+          tone="grey"
+          title="No alerts yet"
+          description="Once a security on your watchlist reaches one of your armed levels, every notification will be logged here."
+        />
       ) : (
-        <>
-          <div className="space-y-3">
-            <HistoryFilterBar filters={filters} setFilters={setFilters} symbols={availableSymbols} />
-            <div className="text-[13px] text-text-secondary pl-1">
-              Showing {filteredAlerts.length} alert{filteredAlerts.length !== 1 ? 's' : ''}
-              {failedCount > 0 && <span className="text-signal-red"> · {failedCount} failed</span>}
-            </div>
+        <div className="space-y-3">
+          <HistoryFilterBar filters={filters} setFilters={setFilters} symbols={availableSymbols} />
+
+          <div className="flex items-center gap-2 px-1 text-[12.5px] text-text-secondary">
+            <span className="sl-num">
+              {filteredAlerts.length} alert{filteredAlerts.length !== 1 ? 's' : ''}
+            </span>
+            {failedCount > 0 && (
+              <>
+                <span className="w-1 h-1 rounded-full bg-surface-border" />
+                <span className="text-signal-red font-semibold sl-num">{failedCount} failed</span>
+              </>
+            )}
           </div>
 
           <HistoryTable alerts={filteredAlerts} />
-        </>
+        </div>
       )}
     </div>
   );

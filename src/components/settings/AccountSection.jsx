@@ -1,8 +1,10 @@
 import { useState } from 'react';
-import { User } from 'lucide-react';
+import { User, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
+import { Card, CardHeader, CardBody } from '../ui/Card';
+import { Modal } from '../ui/Modal';
 import { supabase } from '../../lib/supabase';
 
 const TIMEZONES = [
@@ -72,95 +74,97 @@ export function AccountSection({ user, onChange }) {
 
   return (
     <>
-      <div className="bg-white border border-surface-border rounded-[12px] shadow-sm mb-6">
-        <div className="px-6 py-5 border-b border-surface-border flex items-center gap-2">
-          <User size={20} className="text-text-primary" />
-          <h3 className="text-[16px] font-bold text-text-primary">Account Details</h3>
-        </div>
+      <Card>
+        <CardHeader icon={User} title="Account Details" subtitle={user?.email} />
 
-        <div className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-[13px] font-semibold text-text-primary mb-2">Display Name</label>
-              <Input
-                value={user?.display_name ?? ''}
-                placeholder="Your name"
-                onChange={(e) => onChange({ display_name: e.target.value })}
-              />
-            </div>
-
-            <div>
-              <label className="block text-[13px] font-semibold text-text-primary mb-2">Email</label>
-              <Input value={user?.email ?? ''} disabled readOnly />
-            </div>
+        <CardBody className="space-y-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
+            <Input
+              label="Display name"
+              value={user?.display_name ?? ''}
+              placeholder="Your name"
+              onChange={(e) => onChange({ display_name: e.target.value })}
+            />
+            <Input label="Email" value={user?.email ?? ''} disabled readOnly />
           </div>
 
-          <div className="mt-6 pt-6 border-t border-surface-border">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-[13px] font-semibold text-text-primary mb-2">Password</label>
-                <Button variant="secondary" size="sm" onClick={handlePasswordReset} disabled={resetSending}>
-                  {resetSending ? 'Sending…' : 'Send password reset email'}
-                </Button>
-              </div>
+          <div className="pt-5 border-t border-surface-hairline grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[13px] font-semibold text-text-primary tracking-tightish">Password</span>
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={handlePasswordReset}
+                disabled={resetSending}
+                className="justify-start"
+              >
+                {resetSending ? 'Sending…' : 'Send password reset email'}
+              </Button>
+            </div>
 
-              <div>
-                <label className="block text-[13px] font-semibold text-text-primary mb-2">Time Zone</label>
-                <select
-                  className="w-full h-[40px] px-3 border border-surface-border rounded-[8px] bg-white text-[14px] text-text-primary outline-none focus:border-brand-blue"
-                  value={user?.timezone ?? 'Asia/Karachi'}
-                  onChange={(e) => onChange({ timezone: e.target.value })}
-                >
-                  {TIMEZONES.map(tz => (
-                    <option key={tz.value} value={tz.value}>{tz.label}</option>
-                  ))}
-                </select>
-                <p className="text-[11px] text-text-secondary mt-1">PSX trading hours are shown in PKT</p>
-              </div>
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[13px] font-semibold text-text-primary tracking-tightish">Time zone</span>
+              <select
+                className="w-full h-11 pl-3.5 pr-8 border border-surface-border rounded-[10px] bg-surface-card text-[14px] text-text-primary shadow-inset outline-none transition-all focus:border-brand-blue focus:shadow-focus"
+                value={user?.timezone ?? 'Asia/Karachi'}
+                onChange={(e) => onChange({ timezone: e.target.value })}
+              >
+                {TIMEZONES.map(tz => (
+                  <option key={tz.value} value={tz.value}>{tz.label}</option>
+                ))}
+              </select>
+              <p className="text-[11.5px] text-text-tertiary">PSX trading hours are always shown in PKT</p>
             </div>
           </div>
-        </div>
-      </div>
+        </CardBody>
+      </Card>
 
-      <div className="bg-white border border-signal-red/30 rounded-[12px] p-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h4 className="text-[14px] font-bold text-text-primary">Delete My Data</h4>
-          <p className="text-[13px] text-text-secondary">Permanently delete your watchlist, alert rules, and alert history.</p>
+      <div className="bg-surface-card rounded-xcard border border-signal-red/25 shadow-card p-4 md:p-5 flex flex-col sm:flex-row sm:items-center gap-4">
+        <div className="w-9 h-9 rounded-[11px] bg-signal-redBg text-signal-red flex items-center justify-center shrink-0">
+          <Trash2 size={16} />
         </div>
-        <Button variant="danger" onClick={() => setShowDeleteModal(true)}>
-          Delete Data
+        <div className="flex-1 min-w-0">
+          <h4 className="text-[14px] font-bold text-text-primary tracking-tightish">Delete my data</h4>
+          <p className="text-[12.5px] text-text-secondary mt-0.5 leading-relaxed">
+            Permanently remove your watchlist, alert rules, and alert history.
+          </p>
+        </div>
+        <Button variant="danger" size="sm" onClick={() => setShowDeleteModal(true)} className="shrink-0">
+          Delete data
         </Button>
       </div>
 
-      {showDeleteModal && (
-        <div className="fixed inset-0 bg-slate-900/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-[12px] shadow-xl p-6 w-full max-w-md">
-            <h3 className="text-lg font-bold text-text-primary mb-2">Delete all your data?</h3>
-            <p className="text-sm text-text-secondary mb-4">
-              This action cannot be undone. All your alerts, rules, and watchlist data will be permanently removed and you will be signed out.
-            </p>
-            <label className="block text-[13px] font-semibold text-text-primary mb-2">
-              Type "DELETE" to confirm
-            </label>
-            <Input
-              value={deleteConfirmText}
-              onChange={e => setDeleteConfirmText(e.target.value)}
-              placeholder="DELETE"
-              className="mb-6"
-            />
-            <div className="flex justify-end gap-3">
-              <Button variant="ghost" onClick={() => setShowDeleteModal(false)} disabled={isDeleting}>Cancel</Button>
-              <Button
-                variant="danger"
-                disabled={deleteConfirmText !== 'DELETE' || isDeleting}
-                onClick={handleDeleteData}
-              >
-                {isDeleting ? 'Deleting…' : 'Confirm Delete'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Modal
+        open={showDeleteModal}
+        onClose={() => !isDeleting && setShowDeleteModal(false)}
+        tone="danger"
+        title="Delete all your data?"
+        description="This cannot be undone. All your alerts, rules, and watchlist data will be permanently removed and you will be signed out."
+        footer={
+          <>
+            <Button variant="ghost" size="sm" onClick={() => setShowDeleteModal(false)} disabled={isDeleting}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              disabled={deleteConfirmText !== 'DELETE'}
+              loading={isDeleting}
+              onClick={handleDeleteData}
+            >
+              {isDeleting ? 'Deleting…' : 'Confirm delete'}
+            </Button>
+          </>
+        }
+      >
+        <Input
+          label='Type "DELETE" to confirm'
+          value={deleteConfirmText}
+          onChange={e => setDeleteConfirmText(e.target.value)}
+          placeholder="DELETE"
+          autoCapitalize="characters"
+        />
+      </Modal>
     </>
   );
 }

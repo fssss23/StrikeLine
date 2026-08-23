@@ -8,6 +8,7 @@ import { DrawerHeader } from './DrawerHeader'
 import { ChartTimeToggle } from './ChartTimeToggle'
 import { CandlestickChart } from './CandlestickChart'
 import { AlertConfigForm } from './AlertConfigForm'
+import { cn } from '../../lib/utils'
 
 export function SecurityDrawer() {
   const { drawerOpen, drawerSymbol, isLoading, closeDrawer } = useDrawer()
@@ -59,41 +60,48 @@ export function SecurityDrawer() {
         <>
           <DrawerOverlay onClick={closeDrawer} />
           <motion.div
-            className={`fixed bg-white z-50 flex flex-col overflow-hidden shadow-drawer
-              ${isMobile
-                ? 'bottom-0 left-0 w-full h-[92vh] rounded-t-2xl'
-                : 'top-0 right-0 h-full w-[460px]'
-              }`}
+            className={cn(
+              'fixed bg-surface-card z-[60] flex flex-col overflow-hidden shadow-drawer',
+              isMobile
+                ? 'bottom-0 left-0 w-full h-[93dvh] rounded-t-[24px]'
+                : 'top-0 right-0 h-full w-[480px] border-l border-surface-hairline'
+            )}
             variants={variants}
             initial="hidden"
             animate="visible"
             exit="exit"
-            transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+            transition={{ type: 'spring', damping: 32, stiffness: 320 }}
             drag={isMobile ? 'y' : false}
             dragConstraints={{ top: 0, bottom: 0 }}
-            onDragEnd={(_, info) => { if (isMobile && info.offset.y > 100) closeDrawer() }}
+            dragElastic={{ top: 0, bottom: 0.4 }}
+            onDragEnd={(_, info) => {
+              // Flick-to-dismiss as well as drag-past-threshold
+              if (isMobile && (info.offset.y > 110 || info.velocity.y > 700)) closeDrawer()
+            }}
           >
             {isMobile && (
-              <div className="w-full flex justify-center mt-3 mb-2 shrink-0">
-                <div className="w-9 h-1 bg-[#E4E7ED] rounded-full" />
+              <div className="w-full flex justify-center pt-2.5 pb-1 shrink-0 cursor-grab active:cursor-grabbing">
+                <div className="w-10 h-1 bg-surface-border rounded-full" />
               </div>
             )}
 
             <DrawerHeader />
 
-            {/* Watchlist Toggle */}
-            <div className="px-6 py-3 border-b border-surface-border flex items-center justify-between shrink-0">
-              <span className="text-[13px] text-text-secondary">
-                {isInWatchlist ? 'Saved to your watchlist' : 'Track this security in your watchlist'}
+            {/* Watchlist toggle */}
+            <div className="px-5 py-2.5 border-b border-surface-hairline flex items-center justify-between gap-3 shrink-0 bg-surface-card">
+              <span className="text-[12.5px] text-text-secondary min-w-0 truncate">
+                {isInWatchlist ? 'Saved to your watchlist' : 'Track this security'}
               </span>
               <button
                 onClick={handleWatchlistToggle}
                 disabled={watchlistPending}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-[13px] font-semibold transition-colors disabled:opacity-50
-                  ${isInWatchlist
-                    ? 'bg-brand-navy/10 text-brand-navy hover:bg-brand-navy/20'
-                    : 'bg-brand-blue text-white hover:bg-brand-navy'
-                  }`}
+                className={cn(
+                  'sl-tap flex items-center gap-1.5 px-3 h-9 rounded-pill text-[12.5px] font-semibold shrink-0',
+                  'transition-all duration-200 disabled:opacity-50',
+                  isInWatchlist
+                    ? 'bg-surface-muted text-brand-navy ring-1 ring-inset ring-slate-900/[0.06] hover:bg-surface-border'
+                    : 'bg-blue-gradient text-white shadow-cta hover:brightness-105'
+                )}
               >
                 {isInWatchlist
                   ? <><BookmarkCheck size={14} /> In Watchlist</>
@@ -102,22 +110,18 @@ export function SecurityDrawer() {
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto scroll-touch overscroll-none-y">
               {isLoading ? (
-                <div className="flex items-center justify-center h-48">
-                  <div
-                    className="w-8 h-8 rounded-full border-[3px] border-surface-border border-t-brand-blue animate-spin"
-                  />
+                <div className="flex items-center justify-center h-56">
+                  <div className="w-8 h-8 rounded-full border-[3px] border-surface-border border-t-brand-blue animate-spin" />
                 </div>
               ) : (
                 <>
-                  <div className="p-6 border-b border-surface-border">
+                  <div className="p-5 border-b border-surface-hairline">
                     <ChartTimeToggle activeTimeframe={activeTimeframe} onChange={setActiveTimeframe} />
                     <CandlestickChart activeTimeframe={activeTimeframe} />
                   </div>
-                  <div className="p-6">
-                    <AlertConfigForm />
-                  </div>
+                  <AlertConfigForm />
                 </>
               )}
             </div>

@@ -1,5 +1,7 @@
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { Button } from '../components/ui/Button';
+import { PageHeader } from '../components/ui/PageHeader';
+import { ErrorState } from '../components/ui/States';
 import { AdminStats } from '../components/admin/AdminStats';
 import { AdminControls } from '../components/admin/AdminControls';
 import { AdminUsersTable } from '../components/admin/AdminUsersTable';
@@ -20,37 +22,40 @@ export default function AdminPage() {
   if (overview.isError) {
     return (
       <div className="max-w-[1200px] mx-auto w-full">
-        <div className="bg-white border border-signal-red/30 rounded-[12px] p-8 text-center">
-          <AlertTriangle className="w-8 h-8 text-signal-red mx-auto mb-3" />
-          <h2 className="text-lg font-bold text-text-primary mb-1">Couldn't load admin data</h2>
-          <p className="text-sm text-text-secondary mb-4">{overview.error?.message}</p>
-          <Button variant="primary" onClick={refetchAll}>Try Again</Button>
-        </div>
+        <ErrorState
+          title="Couldn't load admin data"
+          message={overview.error?.message}
+          onRetry={refetchAll}
+        />
       </div>
     );
   }
 
   return (
-    <div className="max-w-[1200px] mx-auto w-full space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">Admin</h1>
-          <p className="text-text-secondary text-sm mt-1">
-            System health, global alert controls, and user management.
-          </p>
-        </div>
-        <Button variant="secondary" size="sm" icon={RefreshCw} onClick={refetchAll}>
-          Refresh
-        </Button>
+    <div className="max-w-[1200px] mx-auto w-full">
+      <PageHeader
+        eyebrow="Operations"
+        title="Admin"
+        subtitle="System health, global alert controls, and user management."
+        action={
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={RefreshCw}
+            onClick={refetchAll}
+            loading={overview.isFetching && !overview.isLoading}
+          >
+            <span className="hidden sm:inline">Refresh</span>
+          </Button>
+        }
+      />
+
+      <div className="space-y-4 md:space-y-5">
+        <AdminStats stats={overview.data?.stats} scraper={overview.data?.scraper} />
+        <AdminControls settings={overview.data?.settings} />
+        <AdminUsersTable users={users.data?.users} isLoading={users.isLoading} />
+        <AdminRecentEvents events={events.data?.events} isLoading={events.isLoading} />
       </div>
-
-      <AdminStats stats={overview.data?.stats} scraper={overview.data?.scraper} />
-
-      <AdminControls settings={overview.data?.settings} />
-
-      <AdminUsersTable users={users.data?.users} isLoading={users.isLoading} />
-
-      <AdminRecentEvents events={events.data?.events} isLoading={events.isLoading} />
     </div>
   );
 }
