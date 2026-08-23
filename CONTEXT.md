@@ -71,7 +71,7 @@ There is **no custom API server**. The frontend talks directly to Supabase (Post
 | Scrape relay | Cloudflare Worker + Durable Object (`cloudflare/`, deployed via wrangler) |
 | Push | Firebase Cloud Messaging (HTTP v1 via `send-push` edge fn — **live**) |
 | WhatsApp | Fonnte (PKR 500/month) — **live, verified end-to-end** |
-| Email (planned) | Resend |
+| Email | Resend — **live** (`evaluate-alerts` → api.resend.com). Sandbox sender until a domain is verified: delivers only to the Resend account owner (`hammadjamal99@gmail.com`); every other recipient 403s. Set `RESEND_FROM` after verifying a domain. |
 | Hosting | Vercel (frontend, GitHub auto-deploy) + Supabase (everything else) |
 
 ---
@@ -298,22 +298,38 @@ hooks/
 
 components/
   layout/      AppShell (auth guard, realtime, page titles, restricted-account
-               lockout screen), Sidebar, TopBar, MobileNav (Admin link shown only
-               when user.is_admin)
+               lockout screen, route-enter animation, pb-nav scroll padding),
+               Sidebar (navy gradient, layoutId active pill + rail, market-status
+               footer), TopBar (SEPARATE mobile + desktop headers — mobile is a
+               frosted title-led bar, desktop is the classic row; both share the
+               KSE-100 chip / bell / avatar), MobileNav (floating pill navbar —
+               see §6.8). Admin entry shown only when user.is_admin
   admin/       AdminStats (stat cards + scraper-health), AdminControls (global
                WhatsApp + pause kill switches), AdminUsersTable (search, restrict,
-               grant admin), AdminRecentEvents
-  search/      SearchBar (debounced ilike query), SearchDropdown
-  watchlist/   WatchlistTable (skeleton/error/empty), WatchlistRow (React.memo,
-               shows "% above/below nearest level", amber when within 1%), AlertLevelBadge
-  drawer/      SecurityDrawer, DrawerHeader, CandlestickChart, ChartTimeToggle,
-               AlertConfigForm, AlertLevelRow, DrawerOverlay
-  dashboard/   SummaryCards (4 live-stat cards)
-  history/     HistoryFilterBar, HistoryTable (pagination), HistoryRow (expandable)
+               grant admin — cards on mobile, table on md+), AdminRecentEvents (same)
+  search/      SearchBar (debounced ilike query, clear button, inline spinner),
+               SearchDropdown
+  watchlist/   WatchlistTable (skeleton/error/empty + desktop column header),
+               WatchlistRow (React.memo; renders a mobile CARD and a desktop
+               TABLE ROW from one component; shows "% above/below nearest level",
+               amber when within 1%), AlertLevelBadge, WatchlistEmpty
+  drawer/      SecurityDrawer (480px rail on desktop / 93dvh sheet with
+               flick-to-dismiss on mobile), DrawerHeader (price + real
+               Open/High/Low/Volume from the latest tick), CandlestickChart,
+               ChartTimeToggle, AlertConfigForm (sticky in-drawer save bar),
+               AlertLevelRow, DrawerOverlay
+  dashboard/   SummaryCards (4 live-stat cards; 2-col on mobile, 4-col on xl)
+  history/     HistoryFilterBar (segmented controls + collapsible advanced panel
+               on mobile), HistoryTable (cards on mobile / grid table on md+,
+               windowed pagination), HistoryRow (expandable)
   settings/    NotificationChannels, AlertDefaults, AccountSection (all controlled)
-  ui/          Button, Input, Badge, Toggle, PriceChange, MarketStatusBadge, …
+  ticker/      MarketTicker (signed-out brand strip — symbols only, never prices)
+  ui/          PRIMITIVES — Button, Input, Badge, Toggle, PriceChange, Skeleton,
+               MarketStatusBadge, Card/CardHeader/CardBody, PageHeader,
+               States (EmptyState + ErrorState), Modal (portalled; centred on
+               desktop, bottom sheet on mobile)
   logo/        StrikeLineLogo (full | mark | inverse)
-  ErrorBoundary.jsx   Root-level "Try Again" fallback
+  ErrorBoundary.jsx   Root-level fallback (retry / reload / show details)
 
 pages/
   LoginPage    DashboardPage    WatchlistPage    AlertHistoryPage    SettingsPage
@@ -382,6 +398,31 @@ price_ticks INSERT (from scraper)
 - Lists show **skeleton loaders** while fetching and an **error card with "Try Again"** (refetch) on failure
 - Root `ErrorBoundary` catches render crashes with a retry button
 - Supabase responses are never trusted to be arrays: always `data || []` / `?.` before `.map/.some/.filter`
+- Empty / error states come from `ui/States.jsx` (`EmptyState`, `ErrorState`) so every screen fails the same way
+
+### 6.8 Mobile shell (the pill navbar)
+
+Mobile is the primary surface, so the chrome is purpose-built rather than a squeezed desktop layout:
+
+```
+┌─────────────────────────────────┐
+│ ⎯/ Watchlist        KSE ▲0.4% 🔔 ●│  frosted header (58px + safe-top)
+│    ● PSX Open                    │
+├─────────────────────────────────┤
+│                                  │
+│   scrollable content (pb-nav)    │
+│                                  │
+│        ╭──────────────────────╮  │
+│        │ ⌂  ▣ Watchlist  ⏱  ⚙ │  │  floating pill nav
+│        ╰──────────────────────╯  │
+└─────────────────────────────────┘
+```
+
+- `MobileNav` is a **floating frosted pill** (`sl-glass-strong` + `shadow-pillnav`), not a full-width bar. Inactive destinations are icon-only; the active one expands to icon + label inside a navy pill.
+- That pill is a **single shared element animated with `layoutId="mobile-nav-pill"`**, so switching tabs slides rather than cuts. Do not give each item its own background.
+- It clears the iOS home indicator via `pb-safe`; pages reserve room with `pb-nav` (`--pillnav-h: 76px`, defined in `index.css`).
+- Z-order: mobile header `z-20` · pill nav `z-30` · drawer overlay `z-50` · drawer `z-[60]` · modals `z-[70]`. Sonner toasts are lifted with `mobileOffset` so they never land on the nav.
+- Anything `position: fixed` inside a page (settings save bar, modals) must be **portalled to `document.body`** — page-enter animations transform the ancestor.
 
 ---
 
@@ -395,10 +436,21 @@ price_ticks INSERT (from scraper)
 | Signal green | `#16A34A` / bg `#F0FDF4` (support, up) |
 | Signal red | `#DC2626` / bg `#FEF2F2` (resistance, down) |
 | Signal amber | `#D97706` / bg `#FFFBEB` (breakout) |
-| Radius | cards 12px · inputs 8px · pills 999px |
-| Font | Inter (Google Fonts); **tabular-nums on every price** |
+| Radius | cards 16px (`rounded-xcard`) · inputs 10px · pills 999px |
+| Font | Inter 400–800 (Google Fonts); **tabular-nums on every price** |
+| Elevation | `shadow-card` → `raised` → `lifted` → `drawer` / `pillnav` (layered, low-opacity — never a single hard shadow) |
+| Gradients | `bg-navy-gradient` (sidebar, active nav pill, navy CTAs) · `bg-blue-gradient` (primary CTAs) |
 
 Logo: horizontal navy line struck through by a blue diagonal, square caps, no fills/gradients (`public/favicon.svg`, `StrikeLineLogo` component; inverse variant for navy backgrounds).
+
+### Shared classes (`src/index.css`, `@layer components` / `@layer utilities`)
+
+`sl-card` · `sl-card-interactive` · `sl-glass` / `sl-glass-strong` (frosted chrome)
+`sl-eyebrow` (10px uppercase label) · `sl-num` (tabular + tight tracking) · `sl-tap` (44px-friendly press feedback)
+`pt-safe` / `pb-safe` / `bottom-safe` (iOS insets) · `pb-nav` / `bottom-nav` (clear the floating pill nav) · `no-scrollbar`
+
+⚠️ These are **component-layer classes, so `md:sl-card` does NOT compile** — write the responsive form out in raw utilities (see `WatchlistTable`).
+⚠️ Tailwind animations use `animation-fill-mode: backwards`, never `both`: a retained `transform` turns the element into the containing block for any `position: fixed` descendant. Modals and the settings save bar are additionally portalled to `document.body`.
 
 ### Hard rules (never violate)
 
@@ -411,6 +463,8 @@ Logo: horizontal navy line struck through by a blue diagonal, square caps, no fi
 7. No localStorage (except Supabase's own session persistence)
 8. No mock data in production paths (the only generated value left is none — chart volume is real)
 9. Functional components only (ErrorBoundary excepted)
+10. **Mobile is a first-class target, not a breakpoint.** Every tappable element clears ~44px, text inputs are ≥16px on mobile (iOS zooms below that), tables become cards, and nothing may sit under the floating pill nav — use `pb-nav` / `bottom-nav`
+11. `index.html` must keep `viewport-fit=cover`, or every `env(safe-area-inset-*)` resolves to 0 and the pill nav collides with the home indicator
 
 ---
 
@@ -435,6 +489,7 @@ Edge function secrets (server-side, `supabase secrets set` — **all set**):
 
 ```
 FONNTE_TOKEN=...              # WhatsApp dispatch
+RESEND_API_KEY=...            # email alerts (set 2026-08-24)
 FIREBASE_SERVICE_ACCOUNT=...  # full service-account JSON for FCM HTTP v1
 PSX_PROXY_URL=...             # Cloudflare worker relay URL
 PSX_PROXY_KEY=...             # must equal the worker's PROXY_KEY secret
