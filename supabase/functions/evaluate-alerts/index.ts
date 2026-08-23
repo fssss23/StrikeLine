@@ -21,6 +21,10 @@
 // `whatsapp_enabled` is a global WhatsApp kill switch. All reads of the new
 // admin tables/columns are defensive, so this deploys safely before the
 // admin-setup.sql migration is run.
+//
+// Channels: WhatsApp (Fonnte), web push (send-push/FCM), email (Resend).
+// Every channel is independently optional — a missing secret disables that
+// channel and is logged once, never throwing.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -229,6 +233,133 @@ Deno.serve(async (req) => {
   }
 })
 
+// ---------------------------------------------------------------------------
+// Email dispatch via Resend.
+//
+// Requires the RESEND_API_KEY secret. The sender is RESEND_FROM, which falls
+// back to Resend's shared sandbox address — that sandbox can ONLY deliver to
+// the address that owns the Resend account, so until a real domain is verified
+// this channel works for the owner and is rejected for everyone else. That
+// rejection is logged explicitly rather than swallowed as a generic failure.
+//
+// The recipient address lives in auth.users, not user_profiles, so it needs a
+// service-role admin lookup — only done when the user actually enabled email.
+// ---------------------------------------------------------------------------
+const RESEND_SANDBOX_FROM = 'StrikeLine <onboarding@resend.dev>'
+
+function alertEmailHtml(
+  symbol: string, action: string, levelType: string,
+  actualPrice: number, levelValue: number
+): string {
+  // Solid pairs, not 8-digit hex with alpha — alpha hex is unreliable in
+  // Outlook and several mobile mail clients.
+  const tone = levelType === 'support' ? '#16A34A'
+    : levelType === 'resistance' ? '#DC2626' : '#D97706'
+  const toneBg = levelType === 'support' ? '#F0FDF4'
+    : levelType === 'resistance' ? '#FEF2F2' : '#FFFBEB'
+
+  // Inline styles only — email clients strip <style> blocks and class rules.
+  return `<!doctype html>
+<html><body style="margin:0;padding:24px;background:#F8F9FB;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+  <div style="max-width:480px;margin:0 auto;background:#FFFFFF;border:1px solid #E4E7ED;border-radius:16px;overflow:hidden;">
+    <div style="background:#0D2F55;padding:20px 24px;">
+      <span style="color:#FFFFFF;font-size:17px;font-weight:700;letter-spacing:-0.02em;">StrikeLine</span>
+      <span style="color:#94A3B8;font-size:12px;margin-left:8px;">PSX price alerts</span>
+    </div>
+    <div style="padding:24px;">
+      <div style="display:inline-block;padding:3px 10px;border-radius:999px;background:${toneBg};color:${tone};font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">${levelType}</div>
+      <h1 style="margin:14px 0 6px;font-size:20px;font-weight:700;color:#0F172A;letter-spacing:-0.02em;">${symbol} ${action}</h1>
+      <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin-top:18px;border-collapse:collapse;">
+        <tr>
+          <td style="padding:10px 0;border-top:1px solid #EDF0F5;color:#64748B;font-size:13px;">Current price</td>
+          <td style="padding:10px 0;border-top:1px solid #EDF0F5;color:#0F172A;font-size:15px;font-weight:700;text-align:right;">PKR ${actualPrice}</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 0;border-top:1px solid #EDF0F5;color:#64748B;font-size:13px;">Your ${levelType} level</td>
+          <td style="padding:10px 0;border-top:1px solid #EDF0F5;color:#0F172A;font-size:15px;font-weight:700;text-align:right;">PKR ${levelValue}</td>
+        </tr>
+      </table>
+      <a href="https://strike-line.vercel.app/" style="display:block;margin-top:22px;padding:13px;background:#2563EB;color:#FFFFFF;text-decoration:none;border-radius:10px;font-size:14px;font-weight:600;text-align:center;">Open StrikeLine</a>
+      <p style="margin:18px 0 0;color:#94A3B8;font-size:11px;line-height:1.6;">
+        You're receiving this because email alerts are on for your StrikeLine account.
+        Turn them off any time in Settings &rsaquo; Notification Channels.
+      </p>
+    </div>
+  </div>
+</body></html>`
+}
+
+async function sendAlertEmail(
+  supabase: ReturnType<typeof createClient>,
+  userId: string, symbol: string, action: string, levelType: string,
+  actualPrice: number, levelValue: number
+): Promise<'sent' | 'failed' | 'skipped'> {
+  const apiKey = Deno.env.get('RESEND_API_KEY')
+  if (!apiKey) {
+    console.log('Email skipped: RESEND_API_KEY is not set')
+    return 'skipped'
+  }
+
+  // Everything below is inside one try/catch on purpose: this runs in the live
+  // alert path, and email is the least important channel. A throw here (a DNS
+  // blip on the admin lookup, Resend unreachable) must never take down the
+  // WhatsApp/push dispatch that already happened for this same alert.
+  try {
+    const { data: authUser, error: lookupError } = await supabase.auth.admin.getUserById(userId)
+    const to = authUser?.user?.email
+    if (lookupError || !to) {
+      console.error('Email skipped: could not resolve address for user', userId, lookupError?.message)
+      return 'skipped'
+    }
+
+    const from = Deno.env.get('RESEND_FROM') ?? RESEND_SANDBOX_FROM
+    const subject = `${symbol} ${action} — PKR ${actualPrice}`
+
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from,
+        to: [to],
+        subject,
+        html: alertEmailHtml(symbol, action, levelType, actualPrice, levelValue),
+        text: `StrikeLine
+
+${symbol} ${action}
+Current price: PKR ${actualPrice}
+Your ${levelType} level: PKR ${levelValue}
+
+https://strike-line.vercel.app/`
+      })
+    })
+
+    if (res.ok) {
+      console.log(`Email sent to ${to} for ${symbol}`)
+      return 'sent'
+    }
+
+    const detail = await res.text()
+    // The single most likely failure while no domain is verified — make it
+    // unmistakable in the logs instead of "email failed: 403".
+    if (res.status === 403 && detail.includes('testing emails')) {
+      console.error(
+        `Email REJECTED for ${to}: the Resend sandbox sender (${from}) can only ` +
+        `deliver to the Resend account owner. Verify a domain and set the ` +
+        `RESEND_FROM secret to enable email for all users.`
+      )
+    } else {
+      console.error(`Resend rejected the email (${res.status}):`, detail)
+    }
+    return 'failed'
+  } catch (err) {
+    console.error('Error calling Resend:', err)
+    return 'failed'
+  }
+}
+
 async function processAlert(
   supabase: any,
   rule: any,
@@ -300,7 +431,7 @@ async function processAlert(
   // Query user_profiles for notification preferences
   const { data: profile, error: profileError } = await supabase
     .from('user_profiles')
-    .select('whatsapp_enabled, whatsapp_number, push_enabled, fcm_token')
+    .select('whatsapp_enabled, whatsapp_number, push_enabled, fcm_token, email_alerts_enabled')
     .eq('id', rule.user_id)
     .single()
 
@@ -378,6 +509,18 @@ async function processAlert(
       console.error('Error invoking send-push:', pushError)
       outcomes.push('failed')
     }
+  }
+
+  // Email via Resend; skipped silently when the user has email alerts off or
+  // RESEND_API_KEY isn't set. A 'skipped' result never counts as a failure.
+  if (profile && profile.email_alerts_enabled) {
+    const emailAction = kind === 'hit'
+      ? `hit your ${levelType} level`
+      : `is approaching your ${levelType} level`
+    const emailOutcome = await sendAlertEmail(
+      supabase, rule.user_id, rule.symbol, emailAction, levelType, actualPrice, levelValue
+    )
+    if (emailOutcome !== 'skipped') outcomes.push(emailOutcome)
   }
 
   // Final status: sent if any channel delivered, failed if all attempts failed,
