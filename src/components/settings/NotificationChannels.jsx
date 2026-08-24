@@ -1,4 +1,4 @@
-import { Bell, Smartphone, Mail } from 'lucide-react';
+import { Bell, Smartphone, Mail, CalendarClock } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { Toggle } from '../ui/Toggle';
@@ -17,7 +17,7 @@ function WhatsAppGlyph({ size = 20, color = '#16A34A' }) {
 }
 
 /** One channel row: plate + copy + switch, with optional expanding detail. */
-function ChannelRow({ plate, icon, title, description, tone, checked, onChange, children, last }) {
+function ChannelRow({ plate, icon, title, description, tone, checked, onChange, children, last, disabled }) {
   return (
     <div className={cn('flex items-start gap-3 md:gap-4 py-4', !last && 'border-b border-surface-hairline')}>
       <div className={cn('w-10 h-10 rounded-[12px] flex items-center justify-center shrink-0', plate)}>
@@ -31,7 +31,7 @@ function ChannelRow({ plate, icon, title, description, tone, checked, onChange, 
         {children}
       </div>
       <div className="shrink-0 pt-1">
-        <Toggle checked={checked} onChange={onChange} />
+        <Toggle checked={checked} onChange={onChange} disabled={disabled} />
       </div>
     </div>
   );
@@ -42,6 +42,7 @@ export function NotificationChannels({ user, onChange }) {
   const waEnabled = user?.whatsapp_enabled ?? false;
   const waNumber = user?.whatsapp_number ?? '';
   const emailEnabled = user?.email_alerts_enabled ?? false;
+  const digestEnabled = user?.market_digest_enabled ?? false;
 
   const handlePushToggle = async (checked) => {
     onChange({ push_enabled: checked });
@@ -114,7 +115,6 @@ export function NotificationChannels({ user, onChange }) {
         </ChannelRow>
 
         <ChannelRow
-          last
           plate="bg-[#F0F9FF] text-[#0EA5E9]"
           icon={<Mail size={19} />}
           title="Email"
@@ -125,6 +125,27 @@ export function NotificationChannels({ user, onChange }) {
           }
           checked={emailEnabled}
           onChange={(checked) => onChange({ email_alerts_enabled: checked })}
+        />
+
+        {/* Digest rides on WhatsApp, so it is meaningless without it. The
+            toggle is disabled rather than hidden so the feature stays
+            discoverable and the reason is visible. */}
+        <ChannelRow
+          last
+          plate="bg-signal-amberBg text-signal-amber"
+          icon={<CalendarClock size={19} />}
+          title="Daily Market Digest"
+          description={
+            !waEnabled
+              ? 'Turn on WhatsApp above to enable the daily digest'
+              : digestEnabled
+                ? 'Two WhatsApp summaries each trading day — at the open and at the close'
+                : 'One WhatsApp summary at market open and one at close, for up to 10 watchlist symbols'
+          }
+          tone={!waEnabled ? 'text-text-tertiary' : undefined}
+          disabled={!waEnabled}
+          checked={digestEnabled && waEnabled}
+          onChange={(checked) => onChange({ market_digest_enabled: checked })}
         />
       </div>
     </Card>

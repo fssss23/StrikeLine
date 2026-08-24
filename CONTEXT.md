@@ -156,8 +156,17 @@ user_profiles (
   timezone              text DEFAULT 'Asia/Karachi',
   cooldown_minutes      int  DEFAULT 240,
   buffer_pct            float DEFAULT 0.5,
+  market_digest_enabled bool DEFAULT false,   -- opt-in to the open/close WhatsApp digest
   is_admin              bool DEFAULT false,   -- can open /admin + call admin-api
   restricted            bool DEFAULT false    -- locked out of app; alerts skipped
+)
+
+digest_log (                      -- one row per user/session/day; service role only
+  user_id     uuid → auth.users,
+  session     text,              -- 'open' | 'close'
+  trade_date  date,
+  symbols     int, status text, sent_at timestamptz,
+  PRIMARY KEY(user_id, session, trade_date)   -- this PK IS the double-send guard
 )
 
 app_settings (                    -- global flags, written ONLY by admin-api (service role)
@@ -197,7 +206,9 @@ app_settings (                    -- global flags, written ONLY by admin-api (se
 - Best-effort fetches the **KSE-100 index** from https://dps.psx.com.pk/indices every run
 - **Chains `evaluate-alerts`** at the end of every successful run so alerts fire on fresh data
 
-**Cron is already scheduled and live** (`scrape-psx-minutely`, every minute — the function self-guards market hours). The SQL lives in `supabase/setup.sql` §4, which also schedules the nightly `rollup_price_ticks()` retention job at 00:30 PKT.
+**Cron jobs live in production**: `psx-scraper-cron` (minutely), `rollup-price-ticks-nightly`, `market-digest-open` / `-close-mon-thu` / `-close-fri`, `cleanup-digest-log-monthly`.
+
+**Cron is already scheduled and live** (`psx-scraper-cron`, every minute — the function self-guards market hours). The SQL lives in `supabase/setup.sql` §4, which also schedules the nightly `rollup_price_ticks()` retention job at 00:30 PKT.
 
 ### 5.2 `evaluate-alerts` — the alert engine
 
@@ -221,6 +232,20 @@ Runs after each scrape (chained) or on its own schedule. **Self-guards** so it i
    - **WhatsApp via Fonnte** — `Authorization` header is the **raw token, no "Bearer" prefix**; body is **form-encoded** (`URLSearchParams`), `countryCode: '92'`. **Verified delivering end-to-end.**
    - **Web push via `send-push`** — invoked with the service role when the profile has `push_enabled` + an `fcm_token`
 7. Sets the event's final `push_status`: `sent` if **any** channel delivered, `failed` if all attempted channels failed, `skipped` if no channel was enabled — the History page surfaces this
+
+### 5.2b `market-digest` — open/close watchlist summary (WhatsApp)
+
+One message per user per session, capped at 10 symbols in the user's own
+watchlist order (`sort_order`).
+
+- `?session=open` — previous day's close (from `price_candles_daily`) vs today's open (`price_ticks.open_price`)
+- `?session=close` — today's open vs today's close (`price_ticks.last_price`)
+- **Opt-in**: `user_profiles.market_digest_enabled`, default `false`. Also requires `whatsapp_enabled`, a number, and not `restricted`.
+- **WhatsApp only.** A 10-row table is the wrong shape for a push banner, and email is sandbox-limited.
+- **Idempotent**: `digest_log` has PK `(user_id, session, trade_date)` and the row is claimed *before* sending, so a cron misfire cannot double-send.
+- Honours the `alerts_paused` and `whatsapp_enabled` global kill switches.
+- Testing: `?force=true` skips the trading-day guard; `&date=YYYY-MM-DD` replays a past session (ignored without `force`); `&resend=true` overrides the double-send guard.
+- Previous close comes from the rollup, never LDCP — the scraper deliberately never stores LDCP, and raw ticks for the prior session may be outside the 30-day retention.
 
 ### 5.3 `send-push` — FCM web push (HTTP v1)
 

@@ -58,6 +58,7 @@ export default function SettingsPage() {
           whatsapp_enabled: localUser.whatsapp_enabled,
           whatsapp_number: localUser.whatsapp_number,
           email_alerts_enabled: localUser.email_alerts_enabled,
+          market_digest_enabled: localUser.market_digest_enabled,
           timezone: localUser.timezone
         })
         .eq('id', session.user.id);
