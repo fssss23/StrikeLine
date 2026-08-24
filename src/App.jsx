@@ -10,6 +10,7 @@ import AlertHistoryPage from './pages/AlertHistoryPage'
 import WatchlistPage from './pages/WatchlistPage'
 import SettingsPage from './pages/SettingsPage'
 import AdminPage from './pages/AdminPage'
+import ResetPasswordPage from './pages/ResetPasswordPage'
 import { SecurityDrawer } from './components/drawer/SecurityDrawer'
 import { StrikeLineLogo } from './components/logo/StrikeLineLogo'
 import { useUserStore } from './store/useUserStore'
@@ -48,6 +49,7 @@ function BootScreen() {
 
 export default function App() {
   const session = useUserStore(state => state.session)
+  const isRecovering = useUserStore(state => state.isRecovering)
   const initializeAuth = useUserStore(state => state.initializeAuth)
 
   useEffect(() => {
@@ -56,6 +58,18 @@ export default function App() {
   }, [initializeAuth])
 
   if (session === undefined) return <BootScreen />
+
+  // A recovery link signs the user in before we get here, so this check has to
+  // come BEFORE the normal session routing — otherwise the reset lands on the
+  // dashboard and there is no way to actually set a new password.
+  if (isRecovering) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <ResetPasswordPage />
+        <Toaster position="bottom-right" richColors />
+      </QueryClientProvider>
+    )
+  }
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -73,6 +87,7 @@ export default function App() {
             <Route path="settings" element={<SettingsPage />} />
             <Route path="admin" element={<AdminRoute><AdminPage /></AdminRoute>} />
           </Route>
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         <SecurityDrawer />
