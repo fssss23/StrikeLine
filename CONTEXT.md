@@ -516,6 +516,21 @@ GET/PATCH https://api.supabase.com/v1/projects/<ref>/config/auth
 `supabase config push` is NOT a safe substitute: with no local `config.toml` it
 would reset every unspecified auth setting to CLI defaults.
 
+⚠️ **Auth email is capped at 2 per hour** on Supabase's shared SMTP, and the cap
+cannot be raised — `PATCH rate_limit_email_sent` returns
+*"Custom SMTP required to configure RATE_LIMIT_EMAIL_SENT"*. This makes password
+reset **look** broken while testing: the 3rd request in an hour silently sends
+nothing. `smtp_max_frequency` was lowered 60s → 10s, which is all that can be
+tuned without custom SMTP.
+
+Removing the cap means pointing Supabase at Resend as custom SMTP — which needs
+a **verified Resend domain** first, since the sandbox sender only delivers to
+the Resend account owner. That one domain verification unlocks alert emails,
+auth emails, and the rate cap together.
+
+Recovery links are **single-use**. Clicking one twice logs
+`403 "One-time token not found"`, which reads like a broken link but is not.
+
 ---
 
 ## 8. Environment Variables
