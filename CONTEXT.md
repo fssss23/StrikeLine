@@ -493,6 +493,31 @@ Logo: horizontal navy line struck through by a blue diagonal, square caps, no fi
 
 ---
 
+### 7.1 Supabase Auth URL configuration (bites hard when wrong)
+
+```
+site_url       https://strike-line.vercel.app
+uri_allow_list https://strike-line.vercel.app/**,http://localhost:5173/**,http://localhost:3000/**
+```
+
+⚠️ **An empty `uri_allow_list` silently breaks every email link.** Supabase does
+not error on a non-allow-listed `redirectTo` — it falls back to `site_url`.
+Until 2026-08-24 the allow-list was empty and `site_url` was
+`http://localhost:3000` (scaffold residue; Vite serves 5173), so every password
+reset landed on a dead port no matter where it was requested from.
+
+Read/write it with the Management API — the CLI's PAT lives in the Windows
+Credential Manager under target `Supabase CLI:supabase` (UTF-8 blob, not UTF-16):
+
+```
+GET/PATCH https://api.supabase.com/v1/projects/<ref>/config/auth
+```
+
+`supabase config push` is NOT a safe substitute: with no local `config.toml` it
+would reset every unspecified auth setting to CLI defaults.
+
+---
+
 ## 8. Environment Variables
 
 Frontend (`.env`, all `VITE_`-prefixed, safe-to-expose keys; **restart the dev server after editing — Vite does not hot-reload .env**). All values are filled and live (Firebase project `strikeline-ee98e`); the same Firebase web config is **inlined in `public/firebase-messaging-sw.js`** because service workers can't read Vite env — keep the two in sync:
@@ -540,7 +565,7 @@ npx wrangler deploy --config cloudflare/wrangler.jsonc
 npx vercel --prod --yes
 ```
 
-- ⚠️ **Vercel does NOT auto-deploy on git push yet** — the GitHub integration isn't connected (Vercel project Settings → Git). Until it is, deploy manually with `npx vercel --prod --yes`.
+- ✅ **Vercel DOES auto-deploy on push to `main`** (verified 2026-08-24 against the live bundle). The old "integration isn't connected" note was stale and caused wrong deploy advice — trust the live site, not this line.
 - `vercel.json` pins functions to `bom1` and has the SPA rewrite; `api/psx-proxy.js` exists but is unused (PSX blocks AWS egress).
 - One-time DB setup lives in `supabase/setup.sql` (KSE100 seed, realtime publication for `price_ticks` + `alert_events`, `price_candles_daily` + retention, cron jobs) — **already run in production**.
 - Bundle is code-split via `manualChunks` in `vite.config.ts` (react / recharts / supabase / firebase / framer-motion vendors)
