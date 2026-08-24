@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { User, Trash2 } from 'lucide-react';
+import { User, Trash2, LogOut } from 'lucide-react';
 import { toast } from 'sonner';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
@@ -20,6 +20,7 @@ export function AccountSection({ user, onChange }) {
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
   const [resetSending, setResetSending] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
 
   const handlePasswordReset = async () => {
     if (!user?.email) return;
@@ -35,6 +36,21 @@ export function AccountSection({ user, onChange }) {
       toast.error(`Failed to send reset link: ${err.message}`);
     } finally {
       setResetSending(false);
+    }
+  };
+
+  // The sidebar's sign-out is hidden on mobile (hidden md:flex), so without
+  // this there is literally no way for a phone user to log out.
+  const handleSignOut = async () => {
+    setSigningOut(true);
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      // AppShell's onAuthStateChange listener handles the redirect to /login
+    } catch (err) {
+      console.error('Sign out failed:', err.message);
+      toast.error('Could not sign out — please try again');
+      setSigningOut(false);
     }
   };
 
@@ -118,6 +134,27 @@ export function AccountSection({ user, onChange }) {
           </div>
         </CardBody>
       </Card>
+
+      <div className="bg-surface-card rounded-xcard border border-surface-hairline shadow-card p-4 md:p-5 flex flex-col sm:flex-row sm:items-center gap-4">
+        <div className="w-9 h-9 rounded-[11px] bg-surface-muted text-text-secondary flex items-center justify-center shrink-0">
+          <LogOut size={16} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <h4 className="text-[14px] font-bold text-text-primary tracking-tightish">Sign out</h4>
+          <p className="text-[12.5px] text-text-secondary mt-0.5 leading-relaxed truncate">
+            Signed in as {user?.email ?? 'this account'}
+          </p>
+        </div>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={handleSignOut}
+          loading={signingOut}
+          className="shrink-0 w-full sm:w-auto"
+        >
+          Sign out
+        </Button>
+      </div>
 
       <div className="bg-surface-card rounded-xcard border border-signal-red/25 shadow-card p-4 md:p-5 flex flex-col sm:flex-row sm:items-center gap-4">
         <div className="w-9 h-9 rounded-[11px] bg-signal-redBg text-signal-red flex items-center justify-center shrink-0">
